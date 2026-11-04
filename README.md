@@ -4,7 +4,7 @@
 
 > 状态：`v0.1.0` PoC / 可运行
 > 平台：Windows 10 / 11（x64）
-> 技术栈：Python 3.10+ / Tkinter / ctypes（Windows SetupAPI 与 USB Hub IOCTL）
+> 技术栈：Python 3.10+ / Tkinter / ctypes（注册表枚举 + USB Hub IOCTL）
 
 ![界面截图](docs/screenshot.png)
 
