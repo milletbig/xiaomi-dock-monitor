@@ -131,20 +131,36 @@ class PortAssignmentTests(unittest.TestCase):
         self.assertEqual(views[3].detail.split(" · ")[0], "1609:3A04")
         self.assertIn("USB2 子Hub #3", views[3].note)
 
+    def test_nested_usb2_port_4_maps_physical_port_four(self):
+        from dockmon.dock import _usb_views
+
+        nested = self._hub(
+            r"USB\VID_2717&PID_50BB\7&80fb6c5&0&1", "Generic USB Hub", 0x50BB
+        )
+        flash = self._port(4, 0x1609, 0x3A04, "2.0", "480 Mbps")
+
+        views, unmapped = _usb_views([(nested, flash, None)])
+
+        self.assertEqual(unmapped, [])
+        self.assertEqual(views[2].id, "usb_a2")
+        self.assertEqual(views[2].number, 4)
+        self.assertEqual(views[2].status, STATUS_CONNECTED)
+        self.assertIn("USB2 子Hub #4", views[2].note)
+
     def test_unmapped_nested_port_is_reported(self):
         from dockmon.dock import _usb_views
 
         nested = self._hub(
             r"USB\VID_2717&PID_50BB\7&80fb6c5&0&1", "Generic USB Hub", 0x50BB
         )
-        device = self._port(4, 0x1A2B, 0x3C4D, "2.1", "480 Mbps")
+        device = self._port(2, 0x1A2B, 0x3C4D, "2.1", "480 Mbps")
 
         views, unmapped = _usb_views([(nested, device, None)])
 
         self.assertEqual(len(unmapped), 1)
         self.assertEqual(unmapped[0].hub_role, "USB2")
         self.assertEqual(unmapped[0].hub_level, "子Hub")
-        self.assertEqual(unmapped[0].hub_port, 4)
+        self.assertEqual(unmapped[0].hub_port, 2)
         self.assertTrue(all(view.status == STATUS_IDLE for view in views))
 
     def test_empty_usb_slots_are_idle(self):

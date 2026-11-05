@@ -18,7 +18,7 @@
       "hub_ports": [
         { "role": "usb2", "port": 4 }
       ],
-      "evidence": "实测：手表充电器（05AC:0503）接此口，出现在 USB2 Hub 端口 4；USB3 侧待标定"
+      "evidence": "实测：手表充电器（05AC:0503）与中兴手机（19D2:0307）接此口均出现在顶层 USB2 Hub 端口 4；USB3 侧待标定"
     },
     {
       "number": 3,

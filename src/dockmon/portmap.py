@@ -15,7 +15,7 @@ number physical connector              current evidence
 1      供电 Type-C (PD, power only)      PD state, not in the USB tree
 2      Type-C 数据                     watch charger on top USB2 port 4
 3      USB-A 1                         HDD on top SS port 2
-4      USB-A 2                         HDD on nested SS port 4
+4      USB-A 2                         HDD on nested SS port 4; 16GB drive on nested USB2 port 4
 5      USB-A 3                         HDD on nested SS port 3; 16GB drive on nested USB2 port 3
 =====  ==============================  ====================================
 
@@ -99,7 +99,7 @@ DEFAULT_PORTS: tuple[PhysicalPort, ...] = (
         label="Type-C 数据",
         connector="usb_c",
         hub_ports=(HubPortRef(ROLE_USB2, 4),),
-        evidence="实测：手表充电器（05AC:0503）接此口，出现在 USB2 Hub 端口 4；USB3 侧待标定",
+        evidence="实测：手表充电器（05AC:0503）与中兴手机（19D2:0307）接此口均出现在顶层 USB2 Hub #4；USB3 侧待标定",
     ),
     PhysicalPort(
         number=3,
@@ -263,11 +263,11 @@ def _parse_ports(payload: dict) -> tuple[PhysicalPort, ...]:
 
 
 def _mapping_warnings(ports: tuple[PhysicalPort, ...]) -> tuple[str, ...]:
-    seen: dict[tuple[str, int], str] = {}
+    seen: dict[tuple[str, str, int], str] = {}
     warnings: list[str] = []
     for physical in ports:
         for ref in physical.hub_ports:
-            key = (ref.role, ref.port)
+            key = (ref.role, ref.level, ref.port)
             if key in seen:
                 warnings.append(
                     f"{ref.label} 同时映射到 {seen[key]} 与 {physical.id}，请检查 port_map.json"

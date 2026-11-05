@@ -51,8 +51,9 @@ class CatalogueTests(unittest.TestCase):
         self.assertEqual(DEFAULT_PORT_MAP.lookup(NESTED_HUB, 3).id, "usb_a3")
         self.assertEqual(DEFAULT_PORT_MAP.lookup(NESTED_HUB, 4).id, "usb_a2")
         self.assertEqual(DEFAULT_PORT_MAP.lookup(NESTED_USB2_HUB, 3).id, "usb_a3")
+        self.assertEqual(DEFAULT_PORT_MAP.lookup(NESTED_USB2_HUB, 4).id, "usb_a2")
         self.assertIsNone(DEFAULT_PORT_MAP.lookup(SS_HUB, 3))
-        self.assertIsNone(DEFAULT_PORT_MAP.lookup(NESTED_USB2_HUB, 4))
+        self.assertIsNone(DEFAULT_PORT_MAP.lookup(NESTED_USB2_HUB, 2))
 
     def test_hub_role_and_top_level_detection(self):
         self.assertEqual(detect_hub_role(SS_HUB), ROLE_SS)
@@ -104,6 +105,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(mapping.lookup(NESTED_HUB, 3).id, "usb_a3")
         self.assertEqual(mapping.lookup(NESTED_HUB, 4).id, "usb_a2")
         self.assertEqual(mapping.lookup(NESTED_USB2_HUB, 3).id, "usb_a3")
+        self.assertEqual(mapping.lookup(NESTED_USB2_HUB, 4).id, "usb_a2")
         self.assertEqual(mapping.lookup(USB2_HUB, 4).id, "usb_c")
         self.assertEqual(mapping.warnings, ())
 
