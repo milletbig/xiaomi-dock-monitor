@@ -37,7 +37,7 @@ STATUS_STYLE = {
     STATUS_UNKNOWN: (MUTED, CARD_BORDER, "○ 未知"),
 }
 
-PORT_ORDER = ["usb_a1", "usb_a2", "usb_a3", "usb_c", "pd", "hdmi", "lan", "sd", "tf", "audio"]
+PORT_ORDER = ["pd", "usb_c", "usb_a1", "usb_a2", "usb_a3", "hdmi", "lan", "sd", "tf", "audio"]
 
 HEADER_HEIGHT = 86
 STATS_HEIGHT = 80
@@ -116,7 +116,7 @@ class DockMonitorApp:
         )
         tk.Label(
             left,
-            text="USB-C Dock Monitor · 接口占用 / 协商速率 / 网口吞吐 / 供电规格",
+            text="USB-C Dock Monitor · 接口 1–5 物理编号 / 协商速率 / 网口吞吐 / 供电规格",
             bg=PANEL,
             fg=MUTED,
             font=self.f_sub,
@@ -263,15 +263,21 @@ class DockMonitorApp:
             fill="x", padx=14, pady=(10, 4)
         )
         notes = [
-            "功率为产品规格上限，不是实测瓦数。",
-            "USB 口按 Hub 顺序自动映射；HDMI / 音频 / 存储为系统级推断。",
-            "每口 USB 吞吐（ETW）与卡槽读写速率将在后续版本提供。",
+            "物理编号：1 供电 Type-C、2 Type-C 数据、3–5 USB-A。",
+            "2/3 已按实测标定；4/5 待插拔标定，未标定设备会在下方提示。",
+            "功率为规格上限；HDMI / 音频 / 存储为系统级推断。",
         ]
         for text in notes:
             tk.Label(
                 panel, text=f"· {text}", bg=CARD, fg=MUTED, font=self.f_small,
                 anchor="w", justify="left", wraplength=370
             ).pack(fill="x", padx=14, pady=1)
+
+        self.unmapped_note = tk.Label(
+            panel, text="· 未标定 USB 端口：—", bg=CARD, fg=SUBTLE, font=self.f_small,
+            anchor="w", justify="left", wraplength=370,
+        )
+        self.unmapped_note.pack(fill="x", padx=14, pady=(3, 0))
 
         footer = tk.Frame(panel, bg=CARD)
         footer.pack(side="bottom", fill="x", padx=14, pady=(4, 8))
@@ -351,9 +357,14 @@ class DockMonitorApp:
             1 for port in snapshot.ports if port.kind in ("usb_a", "usb_c") and port.status == STATUS_CONNECTED
         )
         self.stat_values["devices"].configure(text=str(connected_usb + (snapshot.extra_usb or 0)))
-        self.stat_subs["devices"].configure(
-            text="含扩展坞内部设备" if snapshot.dock_present else "未检测到扩展坞"
-        )
+        if not snapshot.dock_present:
+            device_hint = "未检测到扩展坞"
+        elif snapshot.unmapped_usb:
+            device_hint = "未标定端口会在下方提示"
+        else:
+            device_hint = "按物理接口 1–5 映射"
+        self.stat_subs["devices"].configure(text=device_hint)
+        self._update_unmapped_note(snapshot)
 
         network = snapshot.network
         if network.present:
@@ -386,6 +397,20 @@ class DockMonitorApp:
             card["note"].configure(text=port.note)
 
         self._update_network_panel(snapshot)
+
+    def _update_unmapped_note(self, snapshot: Snapshot) -> None:
+        parts = [
+            (
+                f"{item.hub_role} Hub #{item.hub_port} · {item.device}"
+                f"（{item.vid_pid}，{item.speed}）"
+            )
+            for item in snapshot.unmapped_usb
+        ]
+        parts.extend(snapshot.port_map_warnings)
+        if parts:
+            self.unmapped_note.configure(text="· 未标定 / 配置警告：" + "；".join(parts), fg=AMBER)
+        else:
+            self.unmapped_note.configure(text="· 未标定 USB 端口：无", fg=SUBTLE)
 
     def _update_network_panel(self, snapshot: Snapshot) -> None:
         network = snapshot.network
@@ -443,6 +468,7 @@ class DockMonitorApp:
 
         messagebox.showinfo(
             port.label,
+            f"物理接口：{port.number if port.number else '—'}\n"
             f"状态：{port.status}\n设备：{port.headline}\n详情：{port.detail}\n"
             f"速率：{port.speed}\n功率：{port.power}\n备注：{port.note or '—'}",
             parent=self.root,

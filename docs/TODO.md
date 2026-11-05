@@ -2,6 +2,7 @@
 
 > 原则：先做“Windows 能拿到、且能验证”的数据；拿不到的（真实功率）不做假数据，只显示规格上限。
 > 验证环境：Windows 11 + 小米 VID_2717 USB-C Hub（USB3.1/USB2.1 双 Hub，下游 RTL8153 千兆网卡）。
+> 物理口编号：1=供电 Type-C，2=Type-C 数据，3–5=USB-A 1–3；详见 `docs/port-mapping.md`。
 
 ## 一、已确认可执行（v0.1 范围）
 
@@ -25,7 +26,7 @@
 | ID | 待办事项 | 可行性 | 说明 | 状态 |
 |---|---|---|---|---|
 | P1 | 每个 USB 口的实时吞吐（MB/s） | 🟡 可行但复杂 | 用 USB ETW（`Microsoft-Windows-USB-USBHUB3` / `USBPORT` / `UCX` / `USBXHCI`）按设备地址统计；需管理员、1s 聚合、有 CPU 开销 | ⏳ 待办 |
-| P2 | 物理口 ↔ Hub 端口映射配置 | ✅ 可执行 | 10 合 1 的内部 Hub 端口与 3×USB-A/1×USB-C 没有公开对应表；增加 `config/port_map.json`，实测后固化 | ⏳ 待办 |
+| P2 | 物理口 ↔ Hub 端口映射配置 | ✅ 可执行 | 已按“供电 C=1、数据 C=2、USB-A=3–5”编号；`config/port_map.json` 记录实测锚点（C→USB2#4、A1→SS#2）；4/5 与两侧补充端口待插拔标定 | 🟡 进行中 |
 | P3 | SD/TF 读写速率 | ✅ 可执行 | `psutil.disk_io_counters(perdisk=True)` + `Get-Disk`/`Get-Partition` 将盘符映射到 PhysicalDrive | ⏳ 待办 |
 | P4 | 托盘模式 / 开机自启 / 单实例 | ✅ 可执行 | `pystray` 或 Win32 托盘 API；避免每次弹主窗口 | ⏳ 待办 |
 | P5 | 打包成单文件 exe | ✅ 可执行 | PyInstaller（`--noconsole`），附带版本信息 | ⏳ 待办 |

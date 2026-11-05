@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from dataclasses import asdict, dataclass, field
 
-from . import pnp, usbhub
+from . import pnp, portmap, usbhub
 from .metrics import (
     DisplayMetrics,
     NetworkMetrics,
@@ -40,6 +40,18 @@ class PortView:
     speed: str = "—"
     power: str = "—"
     note: str = ""
+    number: int = 0
+
+
+@dataclass(slots=True)
+class UnmappedUsb:
+    """A connected top-level hub port that has no physical mapping yet."""
+
+    hub_role: str
+    hub_port: int
+    device: str
+    vid_pid: str
+    speed: str
 
 
 @dataclass(slots=True)
@@ -53,7 +65,10 @@ class Snapshot:
     displays: DisplayMetrics = field(default_factory=DisplayMetrics)
     removable: list[RemovableDrive] = field(default_factory=list)
     usb_devices: list[str] = field(default_factory=list)
+    unmapped_usb: list[UnmappedUsb] = field(default_factory=list)
     extra_usb: int = 0
+    port_map_source: str = ""
+    port_map_warnings: list[str] = field(default_factory=list)
     timestamp: float = field(default_factory=time.time)
 
     def to_dict(self) -> dict:
@@ -75,6 +90,7 @@ def _external_devices(
     audio: list[pnp.UsbDevice] = []
 
     for hub in hubs:
+        physical_hub = portmap.is_top_level_hub(hub)
         for port in hub.ports:
             if not port.connected:
                 continue
@@ -85,6 +101,13 @@ def _external_devices(
                 port.instance_id = ""
             if port.is_hub:
                 continue
+            # Devices on the dock's external connectors always belong to a
+            # USB card, even when Windows classifies a flash drive as a disk.
+            if physical_hub:
+                external.append((hub, port, dev))
+                continue
+            # The nested hubs carry the dock's internal LAN / card reader /
+            # audio functions; keep classifying those separately.
             if dev is not None and dev.is_network:
                 lan.append(dev)
                 continue
@@ -98,48 +121,91 @@ def _external_devices(
     return external, lan, storage, audio
 
 
+def _unmapped_usb(
+    hub: usbhub.HubInfo,
+    port: usbhub.PortInfo,
+    dev: pnp.UsbDevice | None,
+) -> UnmappedUsb:
+    role = portmap.detect_hub_role(hub)
+    return UnmappedUsb(
+        hub_role=portmap.ROLE_LABEL.get(role, role.upper()),
+        hub_port=port.number,
+        device=dev.name if dev else _fallback_name(port),
+        vid_pid=f"{port.vid:04X}:{port.pid:04X}",
+        speed=port.speed or "未知",
+    )
+
+
 def _usb_views(
     external: list[tuple[usbhub.HubInfo, usbhub.PortInfo, pnp.UsbDevice | None]],
-) -> tuple[list[PortView], int]:
-    slots = [
-        ("usb_a1", "USB-A 1"),
-        ("usb_a2", "USB-A 2"),
-        ("usb_a3", "USB-A 3"),
-        ("usb_c", "USB-C 数据"),
-    ]
-    ordered = sorted(external, key=lambda item: (item[0].vid != XIAOMI_VID, item[0].instance_id, item[1].number))
+    port_map: portmap.PortMap | None = None,
+) -> tuple[list[PortView], list[UnmappedUsb]]:
+    """Map connected hub ports onto the numbered physical connectors.
+
+    Devices on unmapped top-level ports are reported separately instead of
+    being forced into an arbitrary USB-A slot (the v0.1 behaviour, which put
+    the watch charger and the HDD in the wrong cards).
+    """
+    mapping = port_map or portmap.DEFAULT_PORT_MAP
+    assigned: dict[str, tuple[usbhub.HubInfo, usbhub.PortInfo, pnp.UsbDevice | None]] = {}
+    unmapped: list[UnmappedUsb] = []
+
+    for item in external:
+        hub, port, dev = item
+        physical = mapping.lookup(hub, port.number)
+        if physical is None or physical.id == "pd":
+            if portmap.is_top_level_hub(hub):
+                unmapped.append(_unmapped_usb(hub, port, dev))
+            continue
+        if physical.id in assigned:
+            # Two ports claiming the same connector means the table is wrong.
+            unmapped.append(_unmapped_usb(hub, port, dev))
+            continue
+        assigned[physical.id] = item
+
     views: list[PortView] = []
-    extra = max(0, len(ordered) - len(slots))
-    for index, (slot_id, label) in enumerate(slots):
-        if index >= len(ordered):
+    for physical in mapping.data_ports:
+        item = assigned.get(physical.id)
+        if item is None:
+            refs = "、".join(ref.label for ref in physical.hub_ports)
+            note = f"已标定：{refs}" if refs else "该口映射待标定"
             views.append(
                 PortView(
-                    id=slot_id,
-                    label=label,
-                    kind="usb_c" if slot_id == "usb_c" else "usb_a",
+                    id=physical.id,
+                    label=physical.display_label,
+                    kind="usb_c" if physical.connector == "usb_c" else "usb_a",
                     status=STATUS_IDLE,
                     headline="空闲",
                     detail="未插入设备",
                     speed="—",
                     power="≤7.5W",
+                    note=note,
+                    number=physical.number,
                 )
             )
             continue
-        _hub, port, dev = ordered[index]
+
+        hub, port, dev = item
+        role = portmap.detect_hub_role(hub)
+        role_label = portmap.ROLE_LABEL.get(role, role.upper())
+        note = f"{role_label} Hub #{port.number}"
+        if port.usb_version:
+            note += f" · USB {port.usb_version}"
         views.append(
             PortView(
-                id=slot_id,
-                label=label,
-                kind="usb_c" if slot_id == "usb_c" else "usb_a",
+                id=physical.id,
+                label=physical.display_label,
+                kind="usb_c" if physical.connector == "usb_c" else "usb_a",
                 status=STATUS_CONNECTED,
                 headline=dev.name if dev else _fallback_name(port),
                 detail=f"{port.vid:04X}:{port.pid:04X} · {dev.class_label if dev else 'USB 设备'}",
                 speed=port.speed or "未知",
                 power="≤7.5W",
-                note=f"USB {port.usb_version}" if port.usb_version else "",
+                note=note,
+                number=physical.number,
             )
         )
-    return views, extra
+    return views, unmapped
 
 
 def _lan_view(network: NetworkMetrics, lan_devices: list[pnp.UsbDevice]) -> PortView:
@@ -218,19 +284,25 @@ def _hdmi_view(displays: DisplayMetrics) -> PortView:
     )
 
 
-def _pd_view(power: PowerMetrics) -> PortView:
+def _pd_view(power: PowerMetrics, port_map: portmap.PortMap | None = None) -> PortView:
+    mapping = port_map or portmap.DEFAULT_PORT_MAP
+    physical = mapping.by_id.get("pd")
+    label = physical.display_label if physical else "1 · 供电 Type-C"
+    number = physical.number if physical else 1
     if power.plugged:
         return PortView(
-            "pd", "PD 供电", "pd", STATUS_CONNECTED,
+            "pd", label, "pd", STATUS_CONNECTED,
             "电脑已接通电源",
             "规格 100W 输入 / 90W 输出",
             "100W", "—", "实际功率不可测，仅显示规格",
+            number=number,
         )
     return PortView(
-        "pd", "PD 供电", "pd", STATUS_IDLE,
+        "pd", label, "pd", STATUS_IDLE,
         "未接通电源",
         "PD 口仅供电，不传数据",
         "100W", "—", "实际功率不可测，仅显示规格",
+        number=number,
     )
 
 
@@ -253,10 +325,11 @@ def build_snapshot(
         dock_name = f"未检测到小米扩展坞（VID {XIAOMI_VID:04X}）"
         dock_hubs = []
 
+    port_map = portmap.load_port_map()
     external, lan_devices, storage_devices, audio_devices = _external_devices(
         dock_hubs, devices, key_index
     )
-    usb_views, extra = _usb_views(external)
+    usb_views, unmapped = _usb_views(external, port_map)
 
     network = sampler.sample()
     power = sample_power()
@@ -264,8 +337,8 @@ def build_snapshot(
     removable = probe_removable_drives()
 
     ports = [
+        _pd_view(power, port_map),
         *usb_views,
-        _pd_view(power),
         _hdmi_view(displays),
         _lan_view(network, lan_devices),
         *_storage_views(removable, storage_devices),
@@ -282,5 +355,8 @@ def build_snapshot(
         displays=displays,
         removable=removable,
         usb_devices=[(dev.name if dev else _fallback_name(port)) for _hub, port, dev in external],
-        extra_usb=extra,
+        unmapped_usb=unmapped,
+        extra_usb=len(unmapped),
+        port_map_source=port_map.source,
+        port_map_warnings=list(port_map.warnings),
     )

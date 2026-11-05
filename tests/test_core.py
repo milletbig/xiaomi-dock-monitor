@@ -33,27 +33,74 @@ class UsbParsingTests(unittest.TestCase):
 
 
 class PortAssignmentTests(unittest.TestCase):
-    def test_usb_views_fill_slots_and_count_extra(self):
+    def _hub(self, instance: str, description: str, pid: int) -> HubInfo:
+        return HubInfo(instance, description, 0x2717, pid, "sym", True)
+
+    def _port(self, number: int, vid: int, pid: int, usb_version: str, speed: str) -> PortInfo:
+        return PortInfo(
+            number, True, 1, "已连接", vid, pid, usb_version, speed,
+            {"5 Gbps": 5000, "480 Mbps": 480, "12 Mbps": 12}.get(speed, 0), False, f"key{number}",
+        )
+
+    def test_measured_ports_map_to_physical_numbers(self):
         from dockmon.dock import _usb_views
 
-        hub = HubInfo("h", "hub", 0x2717, 0x50BA, "sym", True)
-        ports = [
-            PortInfo(i, True, 1, "已连接", 0x1200 + i, 0x3400 + i, "2.1", "480 Mbps", 480, False, f"key{i}")
-            for i in range(1, 7)
-        ]
-        external = [(hub, port, None) for port in ports]
-        views, extra = _usb_views(external)
-        self.assertEqual([view.id for view in views], ["usb_a1", "usb_a2", "usb_a3", "usb_c"])
-        self.assertTrue(all(view.status == STATUS_CONNECTED for view in views))
-        self.assertEqual(extra, 2)
+        ss_hub = self._hub(
+            r"USB\VID_2717&PID_50BA\6&24176d9b&0&5", "Generic SuperSpeed USB Hub", 0x50BA
+        )
+        usb2_hub = self._hub(
+            r"USB\VID_2717&PID_50BB\6&24176d9b&0&1", "Generic USB Hub", 0x50BB
+        )
+        hdd = self._port(2, 0x152D, 0x0583, "3.0", "5 Gbps")
+        watch = self._port(4, 0x05AC, 0x0503, "2.0", "12 Mbps")
+
+        views, unmapped = _usb_views([(ss_hub, hdd, None), (usb2_hub, watch, None)])
+
+        self.assertEqual([view.id for view in views], ["usb_c", "usb_a1", "usb_a2", "usb_a3"])
+        self.assertEqual([view.number for view in views], [2, 3, 4, 5])
+        self.assertEqual(views[0].label, "2 · Type-C 数据")
+        self.assertEqual(views[1].label, "3 · USB-A 1")
+        self.assertEqual(views[0].detail.split(" · ")[0], "05AC:0503")
+        self.assertEqual(views[1].detail.split(" · ")[0], "152D:0583")
+        self.assertEqual(views[2].status, STATUS_IDLE)
+        self.assertEqual(unmapped, [])
+
+    def test_unmapped_top_level_port_is_reported(self):
+        from dockmon.dock import _usb_views
+
+        ss_hub = self._hub(
+            r"USB\VID_2717&PID_50BA\6&24176d9b&0&5", "Generic SuperSpeed USB Hub", 0x50BA
+        )
+        device = self._port(3, 0x1A2B, 0x3C4D, "2.1", "480 Mbps")
+
+        views, unmapped = _usb_views([(ss_hub, device, None)])
+
+        self.assertEqual(len(unmapped), 1)
+        self.assertEqual(unmapped[0].hub_role, "SS")
+        self.assertEqual(unmapped[0].hub_port, 3)
+        self.assertEqual(unmapped[0].vid_pid, "1A2B:3C4D")
+        self.assertTrue(all(view.status == STATUS_IDLE for view in views))
+
+    def test_nested_hub_port_is_not_a_physical_port(self):
+        from dockmon.dock import _usb_views
+
+        nested = self._hub(
+            r"USB\VID_2717&PID_50BA\7&2ae5b31f&0&1", "Generic SuperSpeed USB Hub", 0x50BA
+        )
+        device = self._port(3, 0x1A2B, 0x3C4D, "2.1", "480 Mbps")
+
+        views, unmapped = _usb_views([(nested, device, None)])
+
+        self.assertEqual(unmapped, [])
+        self.assertTrue(all(view.status == STATUS_IDLE for view in views))
 
     def test_empty_usb_slots_are_idle(self):
         from dockmon.dock import _usb_views
 
-        views, extra = _usb_views([])
-        self.assertEqual(len(views), 4)
+        views, unmapped = _usb_views([])
+        self.assertEqual([view.number for view in views], [2, 3, 4, 5])
         self.assertTrue(all(view.status == STATUS_IDLE for view in views))
-        self.assertEqual(extra, 0)
+        self.assertEqual(unmapped, [])
 
 
 class PortViewTests(unittest.TestCase):
