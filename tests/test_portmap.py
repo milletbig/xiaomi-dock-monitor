@@ -47,6 +47,7 @@ class CatalogueTests(unittest.TestCase):
 
     def test_measured_hub_port_lookup(self):
         self.assertEqual(DEFAULT_PORT_MAP.lookup(USB2_HUB, 4).id, "usb_c")
+        self.assertEqual(DEFAULT_PORT_MAP.lookup(USB2_HUB, 2).id, "usb_a1")
         self.assertEqual(DEFAULT_PORT_MAP.lookup(SS_HUB, 2).id, "usb_a1")
         self.assertEqual(DEFAULT_PORT_MAP.lookup(NESTED_HUB, 3).id, "usb_a3")
         self.assertEqual(DEFAULT_PORT_MAP.lookup(NESTED_HUB, 4).id, "usb_a2")
@@ -102,6 +103,7 @@ class ConfigTests(unittest.TestCase):
         mapping = load_port_map()
         self.assertTrue(mapping.source.endswith("port_map.json"), mapping.source)
         self.assertEqual(mapping.lookup(SS_HUB, 2).id, "usb_a1")
+        self.assertEqual(mapping.lookup(USB2_HUB, 2).id, "usb_a1")
         self.assertEqual(mapping.lookup(NESTED_HUB, 3).id, "usb_a3")
         self.assertEqual(mapping.lookup(NESTED_HUB, 4).id, "usb_a2")
         self.assertEqual(mapping.lookup(NESTED_USB2_HUB, 3).id, "usb_a3")

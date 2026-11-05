@@ -26,9 +26,10 @@
       "label": "USB-A 1",
       "connector": "usb_a",
       "hub_ports": [
-        { "role": "ss", "port": 2 }
+        { "role": "ss", "port": 2 },
+        { "role": "usb2", "port": 2 }
       ],
-      "evidence": "实测：移动硬盘（152D:0583）接此口，出现在顶层 SuperSpeed Hub 端口 2；USB2 侧待标定"
+      "evidence": "USB3 侧：移动硬盘（152D:0583）接此口时出现在顶层 SS Hub 端口 2；USB2 侧：16GB U 盘（1609:3A04）接此口时出现在顶层 USB2 Hub 端口 2"
     },
     {
       "number": 4,

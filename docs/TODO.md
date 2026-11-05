@@ -26,7 +26,7 @@
 | ID | 待办事项 | 可行性 | 说明 | 状态 |
 |---|---|---|---|---|
 | P1 | 每个 USB 口的实时吞吐（MB/s） | 🟡 可行但复杂 | 用 USB ETW（`Microsoft-Windows-USB-USBHUB3` / `USBPORT` / `UCX` / `USBXHCI`）按设备地址统计；需管理员、1s 聚合、有 CPU 开销 | ⏳ 待办 |
-| P2 | 物理口 ↔ Hub 端口映射配置 | ✅ 可执行 | 已按“供电 C=1、数据 C=2、USB-A=3–5”编号；`config/port_map.json` 记录实测锚点（C→顶层 USB2#4、A1→顶层 SS#2、A2→SS 子Hub#4 + USB2 子Hub#4、A3→SS 子Hub#3 + USB2 子Hub#3）；2/3 的另一速率侧待标定 | 🟡 进行中 |
+| P2 | 物理口 ↔ Hub 端口映射配置 | ✅ 可执行 | 已按“供电 C=1、数据 C=2、USB-A=3–5”编号；`config/port_map.json` 记录实测锚点（C→顶层 USB2#4、A1→顶层 SS#2 + 顶层 USB2#2、A2→SS 子Hub#4 + USB2 子Hub#4、A3→SS 子Hub#3 + USB2 子Hub#3）；仅 2 号的 USB3 侧待标定 | 🟡 进行中 |
 | P3 | SD/TF 读写速率 | ✅ 可执行 | `psutil.disk_io_counters(perdisk=True)` + `Get-Disk`/`Get-Partition` 将盘符映射到 PhysicalDrive | ⏳ 待办 |
 | P4 | 托盘模式 / 开机自启 / 单实例 | ✅ 可执行 | `pystray` 或 Win32 托盘 API；避免每次弹主窗口 | ⏳ 待办 |
 | P5 | 打包成单文件 exe | ✅ 可执行 | PyInstaller（`--noconsole`），附带版本信息 | ⏳ 待办 |

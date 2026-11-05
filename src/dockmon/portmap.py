@@ -14,7 +14,7 @@ number physical connector              current evidence
 =====  ==============================  ====================================
 1      供电 Type-C (PD, power only)      PD state, not in the USB tree
 2      Type-C 数据                     watch charger on top USB2 port 4
-3      USB-A 1                         HDD on top SS port 2
+3      USB-A 1                         HDD on top SS port 2; 16GB drive on top USB2 port 2
 4      USB-A 2                         HDD on nested SS port 4; 16GB drive on nested USB2 port 4
 5      USB-A 3                         HDD on nested SS port 3; 16GB drive on nested USB2 port 3
 =====  ==============================  ====================================
@@ -106,8 +106,8 @@ DEFAULT_PORTS: tuple[PhysicalPort, ...] = (
         id="usb_a1",
         label="USB-A 1",
         connector="usb_a",
-        hub_ports=(HubPortRef(ROLE_SS, 2),),
-        evidence="实测：移动硬盘（152D:0583）接此口，出现在 SuperSpeed Hub 端口 2；USB2 侧待标定",
+        hub_ports=(HubPortRef(ROLE_SS, 2), HubPortRef(ROLE_USB2, 2)),
+        evidence="USB3 侧：移动硬盘（152D:0583）接此口时测得顶层 SS Hub #2；USB2 侧：16GB U 盘（1609:3A04）测得顶层 USB2 Hub #2",
     ),
     PhysicalPort(
         number=4,

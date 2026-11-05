@@ -147,6 +147,23 @@ class PortAssignmentTests(unittest.TestCase):
         self.assertEqual(views[2].status, STATUS_CONNECTED)
         self.assertIn("USB2 子Hub #4", views[2].note)
 
+    def test_top_level_usb2_port_2_maps_physical_port_three(self):
+        from dockmon.dock import _usb_views
+
+        usb2_hub = self._hub(
+            r"USB\VID_2717&PID_50BB\6&24176d9b&0&1", "Generic USB Hub", 0x50BB
+        )
+        flash = self._port(2, 0x1609, 0x3A04, "2.0", "480 Mbps")
+
+        views, unmapped = _usb_views([(usb2_hub, flash, None)])
+
+        self.assertEqual(unmapped, [])
+        self.assertEqual(views[1].id, "usb_a1")
+        self.assertEqual(views[1].number, 3)
+        self.assertEqual(views[1].status, STATUS_CONNECTED)
+        self.assertEqual(views[1].detail.split(" · ")[0], "1609:3A04")
+        self.assertIn("USB2 Hub #2", views[1].note)
+
     def test_unmapped_nested_port_is_reported(self):
         from dockmon.dock import _usb_views
 
