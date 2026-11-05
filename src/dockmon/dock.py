@@ -45,9 +45,10 @@ class PortView:
 
 @dataclass(slots=True)
 class UnmappedUsb:
-    """A connected top-level hub port that has no physical mapping yet."""
+    """A connected dock hub port that has no physical mapping yet."""
 
     hub_role: str
+    hub_level: str
     hub_port: int
     device: str
     vid_pid: str
@@ -127,8 +128,10 @@ def _unmapped_usb(
     dev: pnp.UsbDevice | None,
 ) -> UnmappedUsb:
     role = portmap.detect_hub_role(hub)
+    level = portmap.hub_level(hub)
     return UnmappedUsb(
         hub_role=portmap.ROLE_LABEL.get(role, role.upper()),
+        hub_level=portmap.LEVEL_LABEL.get(level, "Hub"),
         hub_port=port.number,
         device=dev.name if dev else _fallback_name(port),
         vid_pid=f"{port.vid:04X}:{port.pid:04X}",
@@ -154,8 +157,7 @@ def _usb_views(
         hub, port, dev = item
         physical = mapping.lookup(hub, port.number)
         if physical is None or physical.id == "pd":
-            if portmap.is_top_level_hub(hub):
-                unmapped.append(_unmapped_usb(hub, port, dev))
+            unmapped.append(_unmapped_usb(hub, port, dev))
             continue
         if physical.id in assigned:
             # Two ports claiming the same connector means the table is wrong.
@@ -187,8 +189,10 @@ def _usb_views(
 
         hub, port, dev = item
         role = portmap.detect_hub_role(hub)
+        level = portmap.hub_level(hub)
         role_label = portmap.ROLE_LABEL.get(role, role.upper())
-        note = f"{role_label} Hub #{port.number}"
+        level_label = portmap.LEVEL_LABEL.get(level, "Hub")
+        note = f"{role_label} {level_label} #{port.number}"
         if port.usb_version:
             note += f" · USB {port.usb_version}"
         views.append(

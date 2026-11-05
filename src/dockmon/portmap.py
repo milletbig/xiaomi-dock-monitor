@@ -1,10 +1,11 @@
 """Physical port catalogue and hub-port mapping for the Xiaomi dock.
 
 The dock exposes two top-level hubs (a SuperSpeed hub and its USB2
-companion).  A physical connector is not necessarily wired to the same
-port number on both hubs, and the internal LAN/card-reader hubs also
-occupy port 1, so enumerating the USB tree in order is not enough to label
-the four data ports.
+companion), and each top-level hub has a nested four-port hub.  A physical
+connector is not necessarily wired to the same hub or port number: USB-A 1
+uses top-level SS port 2, USB-A 3 uses nested SS port 3, and Type-C uses
+top-level USB2 port 4.  Enumerating the tree in order is therefore not
+enough to label the four data ports.
 
 Physical numbering used by this project:
 
@@ -12,10 +13,10 @@ Physical numbering used by this project:
 number physical connector              current evidence
 =====  ==============================  ====================================
 1      供电 Type-C (PD, power only)      PD state, not in the USB tree
-2      Type-C 数据                     watch charger on USB2 hub port 4
-3      USB-A 1                         portable HDD on SS hub port 2
-4      USB-A 2                         to be calibrated
-5      USB-A 3                         to be calibrated
+2      Type-C 数据                     watch charger on top USB2 port 4
+3      USB-A 1                         HDD on top SS port 2
+4      USB-A 2                         HDD on nested SS port 4
+5      USB-A 3                         HDD on nested SS port 3; 16GB drive on nested USB2 port 3
 =====  ==============================  ====================================
 
 The table is loaded from ``config/port_map.json`` when available.  The
@@ -113,16 +114,22 @@ DEFAULT_PORTS: tuple[PhysicalPort, ...] = (
         id="usb_a2",
         label="USB-A 2",
         connector="usb_a",
-        hub_ports=(),
-        evidence="待标定",
+        hub_ports=(
+            HubPortRef(ROLE_SS, 4, level=LEVEL_NESTED),
+            HubPortRef(ROLE_USB2, 4, level=LEVEL_NESTED),
+        ),
+        evidence="USB3 侧：移动硬盘在 4 口时测得 SS 子Hub #4；USB2 侧：16GB U 盘（1609:3A04）测得 USB2 子Hub #4",
     ),
     PhysicalPort(
         number=5,
         id="usb_a3",
         label="USB-A 3",
         connector="usb_a",
-        hub_ports=(HubPortRef(ROLE_SS, 3, level=LEVEL_NESTED),),
-        evidence="实测：移动硬盘（152D:0583）从此口换到 5 口后，出现在 SS 子Hub 端口 3；USB2 侧待标定",
+        hub_ports=(
+            HubPortRef(ROLE_SS, 3, level=LEVEL_NESTED),
+            HubPortRef(ROLE_USB2, 3, level=LEVEL_NESTED),
+        ),
+        evidence="SS 侧：硬盘在 5 口时测得 SS 子Hub #3；USB2 侧：16GB U 盘（1609:3A04）测得 USB2 子Hub #3",
     ),
 )
 
@@ -144,12 +151,11 @@ class PortMap:
 
     def lookup(self, hub: HubInfo, port_number: int) -> PhysicalPort | None:
         """Return the physical connector for a connected hub port, if known."""
-        if not is_top_level_hub(hub):
-            return None
         role = detect_hub_role(hub)
+        level = hub_level(hub)
         for physical in self.ports:
             for ref in physical.hub_ports:
-                if ref.role == role and ref.port == port_number:
+                if ref.role == role and ref.level == level and ref.port == port_number:
                     return physical
         return None
 
@@ -179,15 +185,21 @@ def detect_hub_role(hub: HubInfo) -> str:
     return ROLE_USB2
 
 
-def is_top_level_hub(hub: HubInfo) -> bool:
-    """True for hubs connected directly to a root hub.
+def hub_level(hub: HubInfo) -> str:
+    """Classify a dock hub as ``top`` or ``nested``.
 
     Windows instance IDs use ``6&...`` for root-hub children and ``7&...``
-    (or deeper) for hubs/nested devices.  The dock's LAN and card-reader
-    hubs are the ``7&...`` ones and must not be mapped to external ports.
+    (or deeper) for hubs attached to the dock's top-level hubs.  Both
+    levels can carry external connectors; the nested SS hub also hosts the
+    internal LAN controller, so devices are filtered by class before mapping.
     """
     stem = (hub.instance_id or "").rsplit("\\", 1)[-1]
-    return stem.startswith("6&")
+    return LEVEL_TOP if stem.startswith("6&") else LEVEL_NESTED
+
+
+def is_top_level_hub(hub: HubInfo) -> bool:
+    """True for hubs connected directly to a root hub."""
+    return hub_level(hub) == LEVEL_TOP
 
 
 def default_config_path() -> Path:
@@ -222,11 +234,14 @@ def _parse_ports(payload: dict) -> tuple[PhysicalPort, ...]:
                 raise ValueError(f"{physical_id}: hub_ports 中的每一项必须是对象")
             role = str(raw_ref["role"])
             port = int(raw_ref["port"])
+            level = str(raw_ref.get("level", LEVEL_TOP))
             if role not in ROLE_LABEL:
                 raise ValueError(f"{physical_id}: 未知 hub role {role!r}")
+            if level not in LEVEL_LABEL:
+                raise ValueError(f"{physical_id}: 未知 hub level {level!r}")
             if not 1 <= port <= 255:
                 raise ValueError(f"{physical_id}: 端口号超出范围 {port}")
-            refs.append(HubPortRef(role, port))
+            refs.append(HubPortRef(role, port, level))
 
         ports.append(
             PhysicalPort(

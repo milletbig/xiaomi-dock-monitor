@@ -5,10 +5,11 @@ from pathlib import Path
 
 from dockmon.portmap import (
     DEFAULT_PORT_MAP,
+    LEVEL_NESTED,
     ROLE_SS,
     ROLE_USB2,
-    HubPortRef,
     detect_hub_role,
+    hub_level,
     is_top_level_hub,
     load_port_map,
 )
@@ -28,6 +29,9 @@ USB2_HUB = make_hub(
 NESTED_HUB = make_hub(
     r"USB\VID_2717&PID_50BA\7&2ae5b31f&0&1", "Generic SuperSpeed USB Hub", 0x50BA
 )
+NESTED_USB2_HUB = make_hub(
+    r"USB\VID_2717&PID_50BB\7&80fb6c5&0&1", "Generic USB Hub", 0x50BB
+)
 
 
 class CatalogueTests(unittest.TestCase):
@@ -44,15 +48,21 @@ class CatalogueTests(unittest.TestCase):
     def test_measured_hub_port_lookup(self):
         self.assertEqual(DEFAULT_PORT_MAP.lookup(USB2_HUB, 4).id, "usb_c")
         self.assertEqual(DEFAULT_PORT_MAP.lookup(SS_HUB, 2).id, "usb_a1")
+        self.assertEqual(DEFAULT_PORT_MAP.lookup(NESTED_HUB, 3).id, "usb_a3")
+        self.assertEqual(DEFAULT_PORT_MAP.lookup(NESTED_HUB, 4).id, "usb_a2")
+        self.assertEqual(DEFAULT_PORT_MAP.lookup(NESTED_USB2_HUB, 3).id, "usb_a3")
         self.assertIsNone(DEFAULT_PORT_MAP.lookup(SS_HUB, 3))
-        self.assertIsNone(DEFAULT_PORT_MAP.lookup(NESTED_HUB, 4))
+        self.assertIsNone(DEFAULT_PORT_MAP.lookup(NESTED_USB2_HUB, 4))
 
     def test_hub_role_and_top_level_detection(self):
         self.assertEqual(detect_hub_role(SS_HUB), ROLE_SS)
         self.assertEqual(detect_hub_role(USB2_HUB), ROLE_USB2)
+        self.assertEqual(hub_level(NESTED_HUB), LEVEL_NESTED)
+        self.assertEqual(hub_level(NESTED_USB2_HUB), LEVEL_NESTED)
         self.assertTrue(is_top_level_hub(SS_HUB))
         self.assertTrue(is_top_level_hub(USB2_HUB))
         self.assertFalse(is_top_level_hub(NESTED_HUB))
+        self.assertFalse(is_top_level_hub(NESTED_USB2_HUB))
 
 
 class ConfigTests(unittest.TestCase):
@@ -91,6 +101,9 @@ class ConfigTests(unittest.TestCase):
         mapping = load_port_map()
         self.assertTrue(mapping.source.endswith("port_map.json"), mapping.source)
         self.assertEqual(mapping.lookup(SS_HUB, 2).id, "usb_a1")
+        self.assertEqual(mapping.lookup(NESTED_HUB, 3).id, "usb_a3")
+        self.assertEqual(mapping.lookup(NESTED_HUB, 4).id, "usb_a2")
+        self.assertEqual(mapping.lookup(NESTED_USB2_HUB, 3).id, "usb_a3")
         self.assertEqual(mapping.lookup(USB2_HUB, 4).id, "usb_c")
         self.assertEqual(mapping.warnings, ())
 
@@ -100,12 +113,13 @@ class ConfigTests(unittest.TestCase):
                 "usb_c": [{"role": "ss", "port": 4}],
                 "usb_a1": [{"role": "ss", "port": 2}],
                 "usb_a2": [{"role": "usb2", "port": 2}],
-                "usb_a3": [{"role": "usb2", "port": 3}],
+                "usb_a3": [{"role": "ss", "level": "nested", "port": 3}],
             }
         )
         mapping = load_port_map(self._write(payload))
         self.assertEqual(mapping.lookup(SS_HUB, 4).id, "usb_c")
         self.assertEqual(mapping.lookup(USB2_HUB, 2).id, "usb_a2")
+        self.assertEqual(mapping.lookup(NESTED_HUB, 3).id, "usb_a3")
         self.assertEqual(mapping.warnings, ())
 
     def test_duplicate_mapping_is_reported(self):

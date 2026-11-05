@@ -46,7 +46,7 @@
 - 读取到端口 1/2/4 的连接状态、设备描述符、设备地址。
 - SS 设备的 `EX_V2.Flags` 返回 `0x00000003`（Operating/Capable SuperSpeed），对应 5Gbps。
 - 通过驱动键名成功映射到 `RTL8153` 千兆网卡与 HID 键盘设备实例。
-- 物理口映射已得到两个实测锚点：Type-C 数据口（编号 2）→ USB2 Hub 端口 4；USB-A 1（编号 3）→ SuperSpeed Hub 端口 2；其余待插拔标定（见 `docs/port-mapping.md`）。
+- 物理口映射已得到五个实测锚点：Type-C 数据口（编号 2）→ 顶层 USB2 Hub 端口 4；USB-A 1（编号 3）→ 顶层 SuperSpeed Hub 端口 2；USB-A 2（编号 4）→ SS 子Hub 端口 4；USB-A 3（编号 5）→ SS 子Hub 端口 3 与 USB2 子Hub 端口 3；其余速率侧待插拔标定（见 `docs/port-mapping.md`）。
 - `Microsoft-Windows-USB-USBHUB3` / `USBPORT` / `UCX` / `USBXHCI` ETW Provider 在本机存在，为 P1 的每口吞吐提供基础。
 
 ## 5. 参考

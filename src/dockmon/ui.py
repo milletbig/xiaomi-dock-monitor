@@ -264,7 +264,7 @@ class DockMonitorApp:
         )
         notes = [
             "物理编号：1 供电 Type-C、2 Type-C 数据、3–5 USB-A。",
-            "2/3 已按实测标定；4/5 待插拔标定，未标定设备会在下方提示。",
+            "2–5 已获得实测锚点；未标定的另一速率侧会在下方提示。",
             "功率为规格上限；HDMI / 音频 / 存储为系统级推断。",
         ]
         for text in notes:
@@ -401,7 +401,7 @@ class DockMonitorApp:
     def _update_unmapped_note(self, snapshot: Snapshot) -> None:
         parts = [
             (
-                f"{item.hub_role} Hub #{item.hub_port} · {item.device}"
+                f"{item.hub_role} {item.hub_level} #{item.hub_port} · {item.device}"
                 f"（{item.vid_pid}，{item.speed}）"
             )
             for item in snapshot.unmapped_usb

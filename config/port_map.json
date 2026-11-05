@@ -28,23 +28,29 @@
       "hub_ports": [
         { "role": "ss", "port": 2 }
       ],
-      "evidence": "实测：移动硬盘（152D:0583）接此口，出现在 SuperSpeed Hub 端口 2；USB2 侧待标定"
+      "evidence": "实测：移动硬盘（152D:0583）接此口，出现在顶层 SuperSpeed Hub 端口 2；USB2 侧待标定"
     },
     {
       "number": 4,
       "id": "usb_a2",
       "label": "USB-A 2",
       "connector": "usb_a",
-      "hub_ports": [],
-      "evidence": "待标定"
+      "hub_ports": [
+        { "role": "ss", "level": "nested", "port": 4 },
+        { "role": "usb2", "level": "nested", "port": 4 }
+      ],
+      "evidence": "USB3 侧：移动硬盘（152D:0583）换到 4 口后出现在 SS 子Hub 端口 4；USB2 侧：16GB U 盘（1609:3A04）在 4 口时出现在 USB2 子Hub 端口 4"
     },
     {
       "number": 5,
       "id": "usb_a3",
       "label": "USB-A 3",
       "connector": "usb_a",
-      "hub_ports": [],
-      "evidence": "待标定"
+      "hub_ports": [
+        { "role": "ss", "level": "nested", "port": 3 },
+        { "role": "usb2", "level": "nested", "port": 3 }
+      ],
+      "evidence": "SS 侧：移动硬盘（152D:0583）此前在 5 口时测得 SS 子Hub 端口 3；USB2 侧：16GB U 盘（1609:3A04）在 5 口时测得 USB2 子Hub 端口 3"
     }
   ]
 }
