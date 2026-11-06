@@ -1,9 +1,14 @@
 """Tkinter UI for the dock monitor.
 
-The layout mirrors the physical dock instead of using a flat card grid:
-rear connectors (PD / Type-C data / HDMI) on the top row, the three
-USB-A ports on the front row, and the side connectors (LAN / SD / TF /
-audio) on the bottom row.  Clicking any port fills the detail panel.
+The device area is a top view of the dock (正面朝上):
+
+* short edge left  -> upstream USB-C cable
+* short edge right -> RJ45
+* long edge top    -> PD Type-C, Type-C data, USB-A 1/2/3 (left to right)
+* long edge bottom -> HDMI, SD/TF combo slot (TF above SD), 3.5mm audio
+
+Ports live on a single Canvas so the physical arrangement stays exact;
+clicking a port fills the detail panel below.
 """
 
 from __future__ import annotations
@@ -24,13 +29,12 @@ from .metrics import NetworkSampler, SystemProbe, format_bytes_rate, format_link
 BG = "#0b0f14"
 PANEL = "#111823"
 CARD = "#151d29"
-CARD_HOVER = "#1a2434"
 BODY = "#121a24"
 BODY_EDGE = "#2b3a4e"
 CARD_BORDER = "#263244"
 CARD_BORDER_ACTIVE = "#2f6f57"
 CARD_BORDER_WARN = "#7a5b23"
-CARD_BORDER_HOVER = "#3c4d66"
+CARD_BORDER_HOVER = "#4a5f80"
 TEXT = "#e9eff7"
 MUTED = "#8290a4"
 SUBTLE = "#5f6c80"
@@ -39,6 +43,8 @@ GREEN = "#3ddc97"
 AMBER = "#f2b84b"
 RED = "#ff6b6b"
 BADGE_BG = "#1e2937"
+SOCKET_EDGE = "#3a4a60"
+SOCKET_FILL = "#0d141d"
 
 STATUS_STYLE = {
     STATUS_CONNECTED: (GREEN, CARD_BORDER_ACTIVE, "● 已连接"),
@@ -47,12 +53,8 @@ STATUS_STYLE = {
     STATUS_UNKNOWN: (MUTED, CARD_BORDER, "○ 未知"),
 }
 
-# (zone title, port ids, tile height)
-ZONES = (
-    ("后侧接口 · REAR", ("pd", "usb_c", "hdmi"), 142),
-    ("正面接口 · FRONT", ("usb_a1", "usb_a2", "usb_a3"), 142),
-    ("侧边接口 · SIDE", ("lan", "sd", "tf", "audio"), 152),
-)
+TOP_PORTS = ("pd", "usb_c", "usb_a1", "usb_a2", "usb_a3")
+BOTTOM_PORTS = ("hdmi", "audio")
 
 HEADER_HEIGHT = 64
 STATS_HEIGHT = 68
@@ -80,141 +82,12 @@ def _font_family(root: tk.Tk) -> str:
 
 
 def _round_rect(canvas: tk.Canvas, x1: int, y1: int, x2: int, y2: int, radius: int, **kwargs) -> int:
-    """Draw a rounded rectangle on a Canvas (Tk has no native one)."""
     r = radius
     points = [
         x1 + r, y1, x2 - r, y1, x2, y1 + r, x2, y2 - r,
         x2 - r, y2, x1 + r, y2, x1, y2 - r, x1, y1 + r,
     ]
     return canvas.create_polygon(points, smooth=True, **kwargs)
-
-
-def _draw_port_icon(canvas: tk.Canvas, kind: str, color: str) -> None:
-    """Draw a small connector glyph inside the tile icon canvas."""
-    canvas.delete("all")
-    width, height = 46, 34
-    cx, cy = width / 2, height / 2
-
-    if kind in ("usb_c", "pd"):
-        _round_rect(canvas, cx - 17, cy - 7, cx + 17, cy + 7, 7, outline=color, width=2)
-        _round_rect(canvas, cx - 11, cy - 3, cx + 11, cy + 3, 3, fill=color, outline="")
-    elif kind == "usb_a":
-        canvas.create_rectangle(cx - 15, cy - 7, cx + 15, cy + 7, outline=color, width=2)
-        canvas.create_rectangle(cx - 10, cy - 2, cx + 10, cy + 2, fill=color, outline="")
-        canvas.create_line(cx - 12, cy - 4, cx - 12, cy + 4, fill=color)
-        canvas.create_line(cx + 12, cy - 4, cx + 12, cy + 4, fill=color)
-    elif kind == "hdmi":
-        canvas.create_polygon(cx - 15, cy - 6, cx + 15, cy - 6, cx + 12, cy + 7, cx - 12, cy + 7, outline=color, width=2)
-        canvas.create_line(cx - 9, cy - 2, cx + 9, cy - 2, fill=color)
-    elif kind == "lan":
-        canvas.create_rectangle(cx - 13, cy - 8, cx + 13, cy + 8, outline=color, width=2)
-        for step in range(4):
-            x = cx - 9 + step * 6
-            canvas.create_line(x, cy - 8, x, cy - 3, fill=color)
-            canvas.create_line(x, cy + 3, x, cy + 8, fill=color)
-    elif kind in ("sd", "tf"):
-        inset = 13 if kind == "sd" else 10
-        canvas.create_polygon(
-            cx - inset, cy - 10, cx + inset - 4, cy - 10, cx + inset, cy - 6,
-            cx + inset, cy + 10, cx - inset, cy + 10, outline=color, width=2, fill="",
-        )
-        canvas.create_line(cx - inset + 3, cy - 6, cx - inset + 3, cy + 6, fill=color)
-    elif kind == "audio":
-        canvas.create_oval(cx - 8, cy - 8, cx + 8, cy + 8, outline=color, width=2)
-        canvas.create_oval(cx - 3, cy - 3, cx + 3, cy + 3, fill=color, outline="")
-        canvas.create_arc(cx - 14, cy - 14, cx + 14, cy + 14, start=200, extent=140, style="arc", outline=color)
-    else:
-        canvas.create_oval(cx - 10, cy - 10, cx + 10, cy + 10, outline=color, width=2)
-
-
-class PortTile:
-    """One clickable physical connector with hover and selection states."""
-
-    def __init__(self, parent: tk.Frame, port_id: str, height: int, wrap: int, on_select, fonts) -> None:
-        self.port_id = port_id
-        self.on_select = on_select
-        self.port = None
-        self.selected = False
-        self._hover = 0
-        self._base_border = CARD_BORDER
-
-        self.frame = tk.Frame(parent, bg=CARD, highlightbackground=CARD_BORDER, highlightthickness=1)
-        self.frame.configure(height=height)
-        self.frame.pack_propagate(False)
-
-        header = tk.Frame(self.frame, bg=CARD)
-        header.pack(fill="x", padx=10, pady=(5, 0))
-        self.badge = tk.Label(header, text="", bg=BADGE_BG, fg=ACCENT, font=fonts["badge"], padx=5, pady=1)
-        self.badge.pack(side="left")
-        self.name = tk.Label(header, text="", bg=CARD, fg=TEXT, font=fonts["label"], anchor="w")
-        self.name.pack(side="left", padx=(5, 0))
-        self.status = tk.Label(header, text="○ 空闲", bg=CARD, fg=SUBTLE, font=fonts["badge"], anchor="e")
-        self.status.pack(side="right")
-
-        main = tk.Frame(self.frame, bg=CARD)
-        main.pack(fill="x", padx=10, pady=(2, 0))
-        self.icon = tk.Canvas(main, width=46, height=34, bg=CARD, highlightthickness=0)
-        self.icon.pack(side="left", padx=(0, 6))
-        text_col = tk.Frame(main, bg=CARD)
-        text_col.pack(side="left", fill="x", expand=True)
-        self.headline = tk.Label(
-            text_col, text="空闲", bg=CARD, fg=TEXT, font=fonts["device"], anchor="w",
-            justify="left", wraplength=wrap,
-        )
-        self.headline.pack(fill="x")
-        self.detail = tk.Label(text_col, text="未插入设备", bg=CARD, fg=MUTED, font=fonts["detail"], anchor="w")
-        self.detail.pack(fill="x")
-
-        footer = tk.Frame(self.frame, bg=CARD)
-        footer.pack(fill="x", padx=10, pady=(2, 0))
-        self.speed = tk.Label(footer, text="—", bg=BADGE_BG, fg=ACCENT, font=fonts["badge"], padx=5, pady=1)
-        self.speed.pack(side="left")
-        self.power = tk.Label(footer, text="—", bg=BADGE_BG, fg=MUTED, font=fonts["badge"], padx=5, pady=1)
-        self.power.pack(side="left", padx=(5, 0))
-
-        self._bind_all(self.frame)
-
-    def _bind_all(self, widget: tk.Widget) -> None:
-        widget.bind("<Enter>", self._enter)
-        widget.bind("<Leave>", self._leave)
-        widget.bind("<Button-1>", lambda _event: self.on_select(self.port_id))
-        for child in widget.winfo_children():
-            self._bind_all(child)
-
-    def _enter(self, _event=None) -> None:
-        self._hover += 1
-        self._paint_border()
-
-    def _leave(self, _event=None) -> None:
-        self._hover = max(0, self._hover - 1)
-        self._paint_border()
-
-    def _paint_border(self) -> None:
-        if self.selected:
-            border = ACCENT
-        elif self._hover:
-            border = CARD_BORDER_HOVER
-        else:
-            border = self._base_border
-        self.frame.configure(highlightbackground=border)
-
-    def update(self, port, connected: bool, selected: bool) -> None:
-        self.port = port
-        self.selected = selected
-        color, border, status_text = STATUS_STYLE.get(port.status, STATUS_STYLE[STATUS_UNKNOWN])
-        self._base_border = border
-        self.badge.configure(
-            text=str(port.number) if port.number else "",
-            bg=BADGE_BG if port.number else CARD,
-        )
-        self.name.configure(text=port.label.split(" · ", 1)[-1] if port.number else port.label)
-        self.status.configure(text=status_text, fg=color)
-        self.headline.configure(text=port.headline)
-        self.detail.configure(text=port.detail or " ")
-        self.speed.configure(text=port.speed)
-        self.power.configure(text=port.power)
-        _draw_port_icon(self.icon, port.kind, ACCENT if connected else SUBTLE)
-        self._paint_border()
 
 
 class DockMonitorApp:
@@ -242,6 +115,8 @@ class DockMonitorApp:
             "value": (self.family, 16, "bold"),
             "small": (self.family, 8),
             "detail_title": (self.family, 12, "bold"),
+            "slot_title": (self.family, 9, "bold"),
+            "slot_meta": (self.family, 8),
         }
 
         self.probe: SystemProbe | None = None
@@ -251,11 +126,15 @@ class DockMonitorApp:
         self.paused = False
         self.closed = False
         self.selected_id: str | None = None
+        self.hover_id: str | None = None
         self._busy = threading.Lock()
         self._queue: queue.Queue[Snapshot] = queue.Queue()
         self._last_update = 0.0
+        self._slot_items: dict[str, dict[str, int]] = {}
+        self._ports_by_id: dict[str, object] = {}
+        self._hovered_frame: int | None = None
+        self._canvas_size = (0, 0)
 
-        self.tiles: dict[str, PortTile] = {}
         self._build_layout()
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self.root.after(80, self._bootstrap)
@@ -269,7 +148,7 @@ class DockMonitorApp:
         self._build_stats()
 
         body = tk.Frame(self.root, bg=BG)
-        body.grid(row=2, column=0, sticky="nsew", padx=16, pady=(4, 2))
+        body.grid(row=2, column=0, sticky="nsew", padx=16, pady=(4, 0))
         self._build_device(body)
 
         toolbar = tk.Frame(self.root, bg=BG, height=30)
@@ -316,7 +195,7 @@ class DockMonitorApp:
         tk.Label(left, text="小米十合一扩展坞", bg=PANEL, fg=TEXT, font=self.fonts["title"], anchor="w").pack(anchor="w")
         tk.Label(
             left,
-            text="USB-C Dock Monitor · 物理接口 1–5 已标定 / 设备 / 协商速率 / 网口吞吐 / 供电规格",
+            text="USB-C Dock Monitor · 俯视布局 / 设备 / 协商速率 / 网口吞吐 / 供电规格",
             bg=PANEL, fg=MUTED, font=self.fonts["sub"], anchor="w",
         ).pack(anchor="w", pady=(2, 0))
 
@@ -350,45 +229,259 @@ class DockMonitorApp:
             value_label = tk.Label(tile, text=value, bg=CARD, fg=TEXT, font=self.fonts["value"], anchor="w")
             value_label.pack(anchor="w", padx=12)
             sub_label = tk.Label(tile, text=sub, bg=CARD, fg=SUBTLE, font=self.fonts["small"], anchor="w")
-            sub_label.pack(anchor="w", padx=12, pady=(0, 4))
+            sub_label.pack(anchor="w", padx=12, pady=(0, 3))
             self.stat_values[key] = value_label
             self.stat_subs[key] = sub_label
 
     def _build_device(self, parent: tk.Frame) -> None:
         shell = tk.Frame(parent, bg=BODY, highlightbackground=BODY_EDGE, highlightthickness=2)
         shell.pack(fill="both", expand=True)
+        self.device_canvas = tk.Canvas(shell, bg=BODY, highlightthickness=0, cursor="arrow")
+        self.device_canvas.pack(fill="both", expand=True)
+        self.device_canvas.bind("<Configure>", self._on_canvas_resize)
+        self.device_canvas.bind("<Button-1>", self._on_canvas_click)
+        self.device_canvas.bind("<Motion>", self._on_canvas_motion)
 
-        cable = tk.Frame(shell, bg=BODY)
-        cable.pack(fill="x", padx=18, pady=(6, 0))
-        tk.Label(
-            cable, text="◄ 上行 Type-C 连接电脑", bg=BODY, fg=MUTED, font=self.fonts["label"], anchor="w"
-        ).pack(side="left")
-        tk.Label(
-            cable, text="10-in-1 · 4 个 USB 数据口共享 5 Gbps", bg=BODY, fg=SUBTLE,
-            font=self.fonts["small"], anchor="e",
-        ).pack(side="right")
+    def _on_canvas_resize(self, event: tk.Event) -> None:
+        size = (event.width, event.height)
+        if abs(size[0] - self._canvas_size[0]) < 6 and abs(size[1] - self._canvas_size[1]) < 6:
+            return
+        self._canvas_size = size
+        self._draw_device()
 
-        for title, port_ids, height in ZONES:
-            self._build_zone(shell, title, port_ids, height)
+    # --------------------------------------------------------- device view
+    def _draw_device(self) -> None:
+        canvas = self.device_canvas
+        canvas.delete("all")
+        self._slot_items.clear()
+        self._hovered_frame = None
+        width = max(canvas.winfo_width(), 760)
+        height = max(canvas.winfo_height(), 380)
 
-    def _build_zone(self, parent: tk.Frame, title: str, port_ids: tuple[str, ...], height: int) -> None:
-        zone = tk.Frame(parent, bg=BODY)
-        zone.pack(fill="x", padx=18, pady=(6, 0))
+        body_x1, body_x2 = 150, width - 200
+        body_y1, body_y2 = int(height * 0.30), int(height * 0.70)
 
-        heading = tk.Frame(zone, bg=BODY)
-        heading.pack(fill="x")
-        tk.Label(heading, text=title, bg=BODY, fg=SUBTLE, font=self.fonts["small"], anchor="w").pack(side="left")
-        line = tk.Frame(heading, bg=BODY_EDGE, height=1)
-        line.pack(side="left", fill="x", expand=True, padx=(8, 0), pady=(6, 0))
+        canvas.create_text(
+            18, 10, anchor="nw", text="俯视图 · 正面朝上", fill=SUBTLE, font=self.fonts["small"]
+        )
+        canvas.create_text(
+            width - 18, 10, anchor="ne",
+            text="长边上侧：供电 C → 数据 C → USB-A 1/2/3　|　长边下侧：HDMI → SD/TF → 音频",
+            fill=SUBTLE, font=self.fonts["small"],
+        )
 
-        row = tk.Frame(zone, bg=BODY)
-        row.pack(fill="x", pady=(4, 0))
-        for column, port_id in enumerate(port_ids):
-            row.grid_columnconfigure(column, weight=1, uniform=f"zone-{title}")
-            wrap = 250 if len(port_ids) == 3 else 190
-            tile = PortTile(row, port_id, height, wrap, self._select_port, self.fonts)
-            tile.frame.grid(row=0, column=column, sticky="nsew", padx=4)
-            self.tiles[port_id] = tile
+        _round_rect(canvas, body_x1, body_y1, body_x2, body_y2, 18, fill=BODY, outline=BODY_EDGE, width=2)
+        canvas.create_line(body_x1 + 26, body_y1 + 20, body_x2 - 26, body_y1 + 20, fill="#1b2534")
+        canvas.create_text(
+            (body_x1 + body_x2) // 2, body_y2 - 24,
+            text="XIAOMI 10-in-1 USB-C HUB", fill=SUBTLE, font=self.fonts["small"],
+        )
+
+        # upstream cable on the left short edge
+        cable_y = (body_y1 + body_y2) // 2
+        canvas.create_line(16, cable_y, body_x1 - 12, cable_y, fill=SOCKET_EDGE, width=4)
+        _round_rect(canvas, body_x1 - 12, cable_y - 9, body_x1 + 10, cable_y + 9, 6,
+                    fill=SOCKET_FILL, outline=SOCKET_EDGE, width=1)
+        canvas.create_text(16, cable_y - 44, anchor="nw", text="上行 Type-C\n连接电脑",
+                           fill=MUTED, font=self.fonts["small"], justify="left")
+        canvas.create_text(16, cable_y + 20, anchor="nw", text="短边左侧",
+                           fill=SUBTLE, font=self.fonts["small"])
+
+        # top long edge: five ports
+        col_width = (body_x2 - body_x1) / len(TOP_PORTS)
+        for index, port_id in enumerate(TOP_PORTS):
+            cx = int(body_x1 + col_width * (index + 0.5))
+            block_x1 = int(body_x1 + col_width * index) + 5
+            block_x2 = int(body_x1 + col_width * (index + 1)) - 5
+            block_y1, block_y2 = 26, body_y1 - 14
+            self._draw_port_block(port_id, block_x1, block_y1, block_x2, block_y2, cx, body_y1, "top")
+
+        # bottom long edge: HDMI, SD/TF combo, audio
+        group_width = (body_x2 - body_x1) / 3
+        block_y1, block_y2 = body_y2 + 22, height - 12
+        hdmi_cx = int(body_x1 + group_width * 0.5)
+        hdmi_x1 = int(body_x1 + group_width * 0) + 5
+        hdmi_x2 = int(body_x1 + group_width * 1) - 5
+        self._draw_port_block("hdmi", hdmi_x1, block_y1, hdmi_x2, block_y2, hdmi_cx, body_y2, "bottom")
+
+        combo_cx = int(body_x1 + group_width * 1.5)
+        combo_x1 = int(body_x1 + group_width * 1) + 5
+        combo_x2 = int(body_x1 + group_width * 2) - 5
+        self._draw_combo_block(combo_x1, block_y1, combo_x2, block_y2, combo_cx, body_y2)
+
+        audio_cx = int(body_x1 + group_width * 2.5)
+        audio_x1 = int(body_x1 + group_width * 2) + 5
+        audio_x2 = int(body_x1 + group_width * 3) - 5
+        self._draw_port_block("audio", audio_x1, block_y1, audio_x2, block_y2, audio_cx, body_y2, "bottom")
+
+        # RJ45 on the right short edge
+        lan_cx = body_x2
+        lan_x1, lan_x2 = body_x2 + 26, width - 16
+        lan_y1, lan_y2 = cable_y - 62, cable_y + 62
+        self._draw_port_block("lan", lan_x1, lan_y1, lan_x2, lan_y2, lan_cx, cable_y, "right")
+
+        self._refresh_device()
+
+    def _draw_port_block(
+        self, port_id: str, x1: int, y1: int, x2: int, y2: int, cx: int, edge_y: int, side: str
+    ) -> None:
+        canvas = self.device_canvas
+        tag = f"port_{port_id}"
+        canvas.create_rectangle(x1, y1, x2, y2, fill=BG, outline="", tags=(tag,))
+
+        frame = _round_rect(canvas, x1, y1, x2, y2, 8, fill="", outline=CARD_BORDER, width=1, tags=(tag,))
+        dot = canvas.create_oval(x1 + 12, y1 + 13, x1 + 20, y1 + 21, fill=SUBTLE, outline="", tags=(tag,))
+        title = canvas.create_text(x1 + 26, y1 + 8, anchor="nw", text="", fill=TEXT,
+                                   font=self.fonts["slot_title"], tags=(tag,))
+        gap = 24 if (y2 - y1) >= 110 else 20
+        device = canvas.create_text(x1 + 10, y1 + 32, anchor="nw", text="", fill=MUTED,
+                                    font=self.fonts["slot_meta"], tags=(tag,))
+        info = canvas.create_text(x1 + 10, y1 + 32 + gap, anchor="nw", text="", fill=SUBTLE,
+                                  font=self.fonts["slot_meta"], tags=(tag,))
+        note = canvas.create_text(x1 + 10, y1 + 32 + gap * 2, anchor="nw", text="", fill=SUBTLE,
+                                  font=self.fonts["small"], tags=(tag,))
+
+        socket = self._draw_socket(port_id, cx, edge_y, side, tag)
+        self._slot_items[port_id] = {
+            "frame": frame, "dot": dot, "title": title, "device": device,
+            "info": info, "note": note, "socket": socket, "tag": tag,
+            "title_max": (x2 - x1) - 32, "text_max": (x2 - x1) - 20,
+            "compact": (y2 - y1) < 110,
+        }
+
+    def _draw_combo_block(self, x1: int, y1: int, x2: int, y2: int, cx: int, edge_y: int) -> None:
+        canvas = self.device_canvas
+        canvas.create_rectangle(x1, y1, x2, y2, fill=BG, outline="")
+        canvas.create_text(x1 + 12, y1 + 6, anchor="nw", text="SD / TF 卡槽", fill=TEXT,
+                           font=self.fonts["slot_title"])
+        if y2 - y1 >= 165:
+            canvas.create_text(x1 + 12, y2 - 24, anchor="nw", text="同一槽位：TF 在上 · SD 在下",
+                               fill=SUBTLE, font=self.fonts["small"])
+
+        row_height = 46
+        for index, (port_id, label) in enumerate((("tf", "TF 卡槽（上层）"), ("sd", "SD 卡槽（下层）"))):
+            row_y1 = y1 + 32 + index * (row_height + 8)
+            row_y2 = row_y1 + row_height
+            tag = f"port_{port_id}"
+            canvas.create_rectangle(x1 + 2, row_y1, x2 - 2, row_y2, fill=BG, outline="")
+            frame = _round_rect(canvas, x1 + 2, row_y1, x2 - 2, row_y2, 6, fill="",
+                                outline=CARD_BORDER, width=1, tags=(tag,))
+            dot = canvas.create_oval(x1 + 12, row_y1 + 14, x1 + 20, row_y1 + 22,
+                                     fill=SUBTLE, outline="", tags=(tag,))
+            title = canvas.create_text(x1 + 26, row_y1 + 5, anchor="nw", text=label,
+                                       fill=TEXT, font=self.fonts["slot_meta"], tags=(tag,))
+            info = canvas.create_text(x1 + 26, row_y1 + 23, anchor="nw", text="",
+                                      fill=SUBTLE, font=self.fonts["small"], tags=(tag,))
+            socket = self._draw_socket(port_id, cx, edge_y, "bottom", tag)
+            self._slot_items[port_id] = {
+                "frame": frame, "dot": dot, "title": title, "device": None,
+                "info": info, "note": None, "socket": socket, "tag": tag,
+                "title_max": (x2 - x1) - 32, "text_max": (x2 - x1) - 44,
+            }
+
+    def _draw_socket(self, port_id: str, cx: int, cy: int, side: str, tag: str) -> list[int]:
+        canvas = self.device_canvas
+        items: list[int] = []
+        if port_id in ("pd", "usb_c"):
+            items.append(_round_rect(canvas, cx - 15, cy - 8, cx + 15, cy + 8, 7,
+                                     fill=SOCKET_FILL, outline=SOCKET_EDGE, width=2, tags=(tag,)))
+        elif port_id.startswith("usb_a"):
+            items.append(canvas.create_rectangle(cx - 15, cy - 8, cx + 15, cy + 8,
+                                                 fill=SOCKET_FILL, outline=SOCKET_EDGE, width=2, tags=(tag,)))
+            items.append(canvas.create_rectangle(cx - 10, cy - 3, cx + 10, cy + 3,
+                                                 fill=SOCKET_EDGE, outline="", tags=(tag,)))
+        elif port_id == "hdmi":
+            items.append(canvas.create_polygon(cx - 16, cy - 7, cx + 16, cy - 7,
+                                               cx + 13, cy + 8, cx - 13, cy + 8,
+                                               fill=SOCKET_FILL, outline=SOCKET_EDGE, width=2, tags=(tag,)))
+        elif port_id == "lan":
+            items.append(canvas.create_rectangle(cx - 8, cy - 18, cx + 16, cy + 18,
+                                                 fill=SOCKET_FILL, outline=SOCKET_EDGE, width=2, tags=(tag,)))
+            for step in range(4):
+                py = cy - 13 + step * 9
+                items.append(canvas.create_line(cx - 4, py, cx + 10, py, fill=SOCKET_EDGE, tags=(tag,)))
+        elif port_id in ("tf", "sd"):
+            top = cy - 16 if port_id == "tf" else cy
+            bottom = cy if port_id == "tf" else cy + 16
+            items.append(canvas.create_polygon(cx - 14, top, cx + 10, top, cx + 14, top + 5,
+                                               cx + 14, bottom, cx - 14, bottom,
+                                               fill=SOCKET_FILL, outline=SOCKET_EDGE, width=2, tags=(tag,)))
+        elif port_id == "audio":
+            items.append(canvas.create_oval(cx - 9, cy - 9, cx + 9, cy + 9,
+                                            fill=SOCKET_FILL, outline=SOCKET_EDGE, width=2, tags=(tag,)))
+            items.append(canvas.create_oval(cx - 3, cy - 3, cx + 3, cy + 3,
+                                            fill=SOCKET_EDGE, outline="", tags=(tag,)))
+        else:
+            items.append(canvas.create_rectangle(cx - 12, cy - 8, cx + 12, cy + 8,
+                                                 fill=SOCKET_FILL, outline=SOCKET_EDGE, width=2, tags=(tag,)))
+        return items
+
+    def _refresh_device(self) -> None:
+        for port_id, items in self._slot_items.items():
+            port = self._ports_by_id.get(port_id)
+            if port is None:
+                continue
+            connected = port.status == STATUS_CONNECTED
+            color, border, _status_text = STATUS_STYLE.get(port.status, STATUS_STYLE[STATUS_UNKNOWN])
+            selected = port_id == self.selected_id
+            hovered = port_id == self.hover_id
+            if selected:
+                outline, outline_width = ACCENT, 2
+            elif hovered:
+                outline, outline_width = CARD_BORDER_HOVER, 2
+            else:
+                outline, outline_width = border, 1
+            self.device_canvas.itemconfigure(items["frame"], outline=outline, width=outline_width)
+            self.device_canvas.itemconfigure(items["dot"], fill=color)
+            title_text = (
+                f"#{port.number} {port.label.split(' · ', 1)[-1]}" if port.number else port.label
+            )
+            self._fit_text(items["title"], title_text, items["title_max"])
+            if items["device"] is not None:
+                self._fit_text(items["device"], port.headline, items["text_max"])
+            self._fit_text(items["info"], self._info_line(port), items["text_max"])
+            if items["note"] is not None:
+                note_text = "" if items.get("compact") else (port.note or "")
+                self._fit_text(items["note"], note_text, items["text_max"])
+            socket_color = ACCENT if connected and port.status == STATUS_CONNECTED else SOCKET_EDGE
+            if port.status == STATUS_WARNING:
+                socket_color = AMBER
+            for socket_item in items["socket"]:
+                if self.device_canvas.type(socket_item) == "line":
+                    self.device_canvas.itemconfigure(socket_item, fill=socket_color)
+                else:
+                    self.device_canvas.itemconfigure(
+                        socket_item, outline=socket_color, width=2 if connected else 1
+                    )
+
+    def _fit_text(self, item: int, text: str, max_width: int) -> None:
+        """Set canvas text, trimming with an ellipsis when wider than the card."""
+        canvas = self.device_canvas
+        text = (text or "").strip()
+        canvas.itemconfigure(item, text=text)
+        if not text:
+            return
+        bbox = canvas.bbox(item)
+        while bbox and bbox[2] - bbox[0] > max_width:
+            measured = bbox[2] - bbox[0]
+            char_width = measured / max(len(text), 1)
+            cut = max(1, int((measured - max_width) / char_width) + 1)
+            text = text[: max(0, len(text) - cut)].rstrip()
+            if not text:
+                break
+            canvas.itemconfigure(item, text=text + "…")
+            bbox = canvas.bbox(item)
+        if not text:
+            canvas.itemconfigure(item, text="")
+
+    @staticmethod
+    def _info_line(port) -> str:
+        if port.kind in ("sd", "tf") or not port.detail:
+            return port.detail or "未插入"
+        first = port.detail.split(" · ")[0]
+        if port.speed and port.speed != "—":
+            return f"{port.speed} · {first}"
+        return port.detail
 
     def _build_detail_panel(self, parent: tk.Frame) -> None:
         panel = tk.Frame(parent, bg=CARD, highlightbackground=CARD_BORDER, highlightthickness=1)
@@ -468,7 +561,7 @@ class DockMonitorApp:
             self.probe = probe
             self.sampler = sampler
             self._queue.put(snapshot)
-        except Exception as exc:  # keep the window usable even if a probe fails
+        except Exception as exc:
             self._queue.put(Snapshot(dock_present=False, dock_name=f"初始化失败：{exc}"))
 
     def _request_refresh(self) -> None:
@@ -508,6 +601,7 @@ class DockMonitorApp:
     def _apply(self, snapshot: Snapshot) -> None:
         self.snapshot = snapshot
         self._last_update = time.time()
+        self._ports_by_id = {port.id: port for port in snapshot.ports}
         dock_color = GREEN if snapshot.dock_present else AMBER
         self.dock_state.configure(
             text=("● 已检测到扩展坞" if snapshot.dock_present else "● 未检测到小米扩展坞"), fg=dock_color
@@ -543,27 +637,18 @@ class DockMonitorApp:
         else:
             self.stat_subs["power"].configure(text="未接通电源 · 规格 100W")
 
-        for port in snapshot.ports:
-            tile = self.tiles.get(port.id)
-            if not tile:
-                continue
-            tile.update(port, port.status == STATUS_CONNECTED, port.id == self.selected_id)
-
-        if self.selected_id is None or not any(port.id == self.selected_id for port in snapshot.ports):
+        if self.selected_id is None or self.selected_id not in self._ports_by_id:
             first = next((port.id for port in snapshot.ports if port.status == STATUS_CONNECTED), "usb_c")
             self.selected_id = first
-            for port in snapshot.ports:
-                tile = self.tiles.get(port.id)
-                if tile:
-                    tile.update(port, port.status == STATUS_CONNECTED, port.id == self.selected_id)
-        self._update_detail(self.selected_id)
 
+        self._refresh_device()
+        self._update_detail(self.selected_id)
         self._update_network_panel(snapshot)
 
     def _update_detail(self, port_id: str | None) -> None:
         if not self.snapshot or not port_id:
             return
-        port = next((item for item in self.snapshot.ports if item.id == port_id), None)
+        port = self._ports_by_id.get(port_id)
         if not port:
             return
         color, _border, status_text = STATUS_STYLE.get(port.status, STATUS_STYLE[STATUS_UNKNOWN])
@@ -581,12 +666,32 @@ class DockMonitorApp:
 
     def _select_port(self, port_id: str) -> None:
         self.selected_id = port_id
-        if self.snapshot:
-            for port in self.snapshot.ports:
-                tile = self.tiles.get(port.id)
-                if tile:
-                    tile.update(port, port.status == STATUS_CONNECTED, port.id == port_id)
+        self._refresh_device()
         self._update_detail(port_id)
+
+    def _on_canvas_click(self, event: tk.Event) -> None:
+        port_id = self._port_at(event.x, event.y)
+        if port_id:
+            self._select_port(port_id)
+
+    def _on_canvas_motion(self, event: tk.Event) -> None:
+        port_id = self._port_at(event.x, event.y)
+        if port_id != self.hover_id:
+            self.hover_id = port_id
+            self.device_canvas.configure(cursor="hand2" if port_id else "arrow")
+            self._refresh_device()
+
+    def _port_at(self, x: int, y: int) -> str | None:
+        item = self.device_canvas.find_withtag("current")
+        if not item:
+            current = self.device_canvas.find_closest(x, y)
+            if not current:
+                return None
+            item = current
+        for tag in self.device_canvas.gettags(item[0]):
+            if tag.startswith("port_"):
+                return tag[5:]
+        return None
 
     def _update_unmapped_note(self, snapshot: Snapshot) -> None:
         parts = [
