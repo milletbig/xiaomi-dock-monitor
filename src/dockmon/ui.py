@@ -23,7 +23,14 @@ from tkinter import font as tkfont
 
 from . import __version__
 from .dock import STATUS_CONNECTED, STATUS_IDLE, STATUS_UNKNOWN, STATUS_WARNING, Snapshot, build_snapshot
-from .metrics import NetworkSampler, SystemProbe, format_bytes_rate, format_link_speed, probe_system
+from .metrics import (
+    DiskRateSampler,
+    NetworkSampler,
+    SystemProbe,
+    format_bytes_rate,
+    format_link_speed,
+    probe_system,
+)
 
 # palette
 BG = "#0b0f14"
@@ -123,6 +130,7 @@ class DockMonitorApp:
 
         self.probe: SystemProbe | None = None
         self.sampler: NetworkSampler | None = None
+        self.disk_sampler: DiskRateSampler | None = None
         self.snapshot: Snapshot | None = None
         self.history: list[float] = []
         self.paused = False
@@ -536,6 +544,8 @@ class DockMonitorApp:
     def _info_line(port) -> str:
         if port.kind in ("sd", "tf") or not port.detail:
             return port.detail or "未插入"
+        if port.rate:
+            return f"{port.speed} · {port.rate}" if port.speed and port.speed != "—" else port.rate
         first = port.detail.split(" · ")[0]
         if port.speed and port.speed != "—":
             return f"{port.speed} · {first}"
@@ -615,9 +625,11 @@ class DockMonitorApp:
         try:
             probe = probe_system()
             sampler = NetworkSampler(probe)
-            snapshot = build_snapshot(probe, sampler)
+            disk_sampler = DiskRateSampler(probe)
+            snapshot = build_snapshot(probe, sampler, disk_sampler)
             self.probe = probe
             self.sampler = sampler
+            self.disk_sampler = disk_sampler
             self._queue.put(snapshot)
         except Exception as exc:
             self._queue.put(Snapshot(dock_present=False, dock_name=f"初始化失败：{exc}"))
@@ -631,7 +643,7 @@ class DockMonitorApp:
 
     def _sample_once(self) -> None:
         try:
-            snapshot = build_snapshot(self.probe, self.sampler)
+            snapshot = build_snapshot(self.probe, self.sampler, self.disk_sampler)
             self._queue.put(snapshot)
         except Exception:
             pass
@@ -714,7 +726,10 @@ class DockMonitorApp:
         self.detail_name.configure(text=port.label)
         self.detail_status.configure(text=status_text, fg=color)
         self.detail_device.configure(text=port.headline)
-        self.detail_meta.configure(text=port.detail or "—")
+        meta = port.detail or "—"
+        if port.rate and port.kind not in ("sd", "tf"):
+            meta = f"{meta} · {port.rate}"
+        self.detail_meta.configure(text=meta)
         self.detail_speed.configure(text=port.speed)
         self.detail_power.configure(text=port.power)
         if port.note:

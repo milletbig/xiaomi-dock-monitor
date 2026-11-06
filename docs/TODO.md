@@ -25,9 +25,9 @@
 
 | ID | 待办事项 | 可行性 | 说明 | 状态 |
 |---|---|---|---|---|
-| P1 | 每个 USB 口的实时吞吐（MB/s） | 🟡 可行但复杂 | 用 USB ETW（`Microsoft-Windows-USB-USBHUB3` / `USBPORT` / `UCX` / `USBXHCI`）按设备地址统计；需管理员、1s 聚合、有 CPU 开销 | ⏳ 待办 |
+| P1 | 每个 USB 口的实时吞吐（MB/s） | ✅ 可执行（存储设备） | 用 USB 设备实例串号匹配 `Get-Disk` 的 `Path`，再用 `psutil.disk_io_counters(perdisk=True)` 差分显示 ↓/↑；HID、音频、网卡等非存储设备没有每口计数源，精确统计需 USB ETW（管理员权限，未实现） | ✅ 完成 |
 | P2 | 物理口 ↔ Hub 端口映射配置 | ✅ 可执行 | 已按“供电 C=1、数据 C=2、USB-A=3–5”编号；`config/port_map.json` 记录实测锚点（C→顶层 SS#3 + 顶层 USB2#4、A1→顶层 SS#2 + 顶层 USB2#2、A2→SS 子Hub#4 + USB2 子Hub#4、A3→SS 子Hub#3 + USB2 子Hub#3）；5 个接口已全部标定 | ✅ 完成 |
-| P3 | SD/TF 读写速率 | ✅ 可执行 | `psutil.disk_io_counters(perdisk=True)` + `Get-Disk`/`Get-Partition` 将盘符映射到 PhysicalDrive | ⏳ 待办 |
+| P3 | SD/TF 读写速率 | ✅ 可执行 | `psutil.disk_io_counters(perdisk=True)` + `Get-Disk`/`Get-Partition` 将盘符映射到 PhysicalDrive，按 0.9s 采样差分显示 ↓/↑ | ✅ 完成 |
 | P4 | 托盘模式 / 开机自启 / 单实例 | ✅ 可执行 | `pystray` 托盘 + `--tray` 静默启动；`HKCU\...\Run` 开机自启；命名 Mutex 单实例（重复启动唤起已有窗口） | ✅ 完成 |
 | P5 | 打包成单文件 exe | ✅ 可执行 | `scripts/build_exe.py` 调用 PyInstaller `--onefile --windowed`，自动生成图标与版本信息，产物 `dist/dockmon.exe` | ✅ 完成 |
 | P6 | 历史曲线与导出 CSV | ✅ 可执行 | 采样环形缓冲 + 简单折线图 | ⏳ 待办 |

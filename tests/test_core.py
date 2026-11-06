@@ -211,6 +211,61 @@ class PortViewTests(unittest.TestCase):
         view = PortView("lan", "RJ45", "lan", STATUS_IDLE, "空闲")
         self.assertEqual(view.speed, "—")
         self.assertEqual(view.power, "—")
+        self.assertEqual(view.rate, "")
+
+
+class DiskRateSamplerTests(unittest.TestCase):
+    def _probe(self):
+        from dockmon.metrics import SystemProbe
+
+        return SystemProbe(
+            disks=[
+                {
+                    "Number": 2,
+                    "SerialNumber": "4C530001&0",
+                    "Path": r"\\?\usbstor#disk&ven_sandisk&prod_ultra#4c530001&0#{53f56307-b6bf-11d0-94f2-00a0c91efb8b}",
+                }
+            ],
+            partitions=[{"DriveLetter": "E", "DiskNumber": 2}],
+        )
+
+    def test_partition_letter_maps_to_physical_drive(self):
+        from dockmon.metrics import DiskRateSampler
+
+        sampler = DiskRateSampler(self._probe())
+        self.assertEqual(sampler.disk_for_letter("e"), "PhysicalDrive2")
+        self.assertIsNone(sampler.disk_for_letter("F"))
+
+    def test_usb_device_serial_maps_to_physical_drive(self):
+        from dockmon.metrics import DiskRateSampler
+
+        class Device:
+            instance_id = r"USB\VID_0781&PID_5581\4C530001"
+            service = "USBSTOR"
+            friendly_name = "SanDisk Ultra"
+
+        sampler = DiskRateSampler(self._probe())
+        self.assertEqual(sampler.disk_for_device(Device()), "PhysicalDrive2")
+
+    def test_first_sample_has_no_rate(self):
+        from dockmon.metrics import DiskRateSampler
+
+        sampler = DiskRateSampler(self._probe())
+        self.assertEqual(sampler.sample(), {})
+
+    def test_storage_view_shows_read_write_rate(self):
+        from dockmon.dock import _storage_views
+        from dockmon.metrics import RemovableDrive
+
+        class Sampler:
+            @staticmethod
+            def disk_for_letter(letter):
+                return "PhysicalDrive2"
+
+        views = _storage_views(
+            [RemovableDrive("E", "SD 卡")], [], Sampler(), {"PhysicalDrive2": (1024 * 1024, 0)}
+        )
+        self.assertEqual(views[0].rate, "↓ 1.0 MB/s ↑ 0 B/s")
 
 
 if __name__ == "__main__":

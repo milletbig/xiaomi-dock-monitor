@@ -7,6 +7,7 @@ from dataclasses import asdict, dataclass, field
 
 from . import pnp, portmap, usbhub
 from .metrics import (
+    DiskRateSampler,
     DisplayMetrics,
     NetworkMetrics,
     NetworkSampler,
@@ -41,6 +42,7 @@ class PortView:
     power: str = "—"
     note: str = ""
     number: int = 0
+    rate: str = ""
 
 
 @dataclass(slots=True)
@@ -139,9 +141,22 @@ def _unmapped_usb(
     )
 
 
+def _rate_text(disk_rates: dict[str, tuple[float, float]] | None, disk: str | None) -> str:
+    """Format a per-disk throughput string, or ``""`` when the disk is unknown."""
+    if not disk or not disk_rates:
+        return ""
+    reading = disk_rates.get(disk)
+    if not reading:
+        return ""
+    read_bps, write_bps = reading
+    return f"↓ {format_bytes_rate(read_bps)} ↑ {format_bytes_rate(write_bps)}"
+
+
 def _usb_views(
     external: list[tuple[usbhub.HubInfo, usbhub.PortInfo, pnp.UsbDevice | None]],
     port_map: portmap.PortMap | None = None,
+    disk_sampler: DiskRateSampler | None = None,
+    disk_rates: dict[str, tuple[float, float]] | None = None,
 ) -> tuple[list[PortView], list[UnmappedUsb]]:
     """Map connected hub ports onto the numbered physical connectors.
 
@@ -195,6 +210,7 @@ def _usb_views(
         note = f"{role_label} {level_label} #{port.number}"
         if port.usb_version:
             note += f" · USB {port.usb_version}"
+        disk = disk_sampler.disk_for_device(dev) if disk_sampler is not None else None
         views.append(
             PortView(
                 id=physical.id,
@@ -207,6 +223,7 @@ def _usb_views(
                 power="≤7.5W",
                 note=note,
                 number=physical.number,
+                rate=_rate_text(disk_rates, disk),
             )
         )
     return views, unmapped
@@ -236,18 +253,24 @@ def _lan_view(network: NetworkMetrics, lan_devices: list[pnp.UsbDevice]) -> Port
 
 
 def _storage_views(
-    removable: list[RemovableDrive], storage_devices: list[pnp.UsbDevice]
+    removable: list[RemovableDrive],
+    storage_devices: list[pnp.UsbDevice],
+    disk_sampler: DiskRateSampler | None = None,
+    disk_rates: dict[str, tuple[float, float]] | None = None,
 ) -> list[PortView]:
     slots = [("sd", "SD 卡槽"), ("tf", "TF 卡槽")]
     views: list[PortView] = []
     for index, (slot_id, label) in enumerate(slots):
         if index < len(removable):
             drive = removable[index]
+            disk = disk_sampler.disk_for_letter(drive.letter) if disk_sampler is not None else None
+            rate = _rate_text(disk_rates, disk)
             views.append(
                 PortView(
                     slot_id, label, slot_id, STATUS_CONNECTED,
-                    f"{drive.letter}: {drive.label}", "可移动存储", "—", "—",
-                    "由可移动盘推断（P3 增加读写速率）",
+                    f"{drive.letter}: {drive.label}",
+                    rate or "等待读写采样…", "—", "—",
+                    "由可移动盘推断", rate=rate,
                 )
             )
         else:
@@ -313,9 +336,12 @@ def _pd_view(power: PowerMetrics, port_map: portmap.PortMap | None = None) -> Po
 def build_snapshot(
     system_probe: SystemProbe | None = None,
     network_sampler: NetworkSampler | None = None,
+    disk_sampler: DiskRateSampler | None = None,
 ) -> Snapshot:
     probe = system_probe if system_probe is not None else probe_system()
     sampler = network_sampler if network_sampler is not None else NetworkSampler(probe)
+    disks = disk_sampler if disk_sampler is not None else DiskRateSampler(probe)
+    disk_rates = disks.sample()
 
     hubs = usbhub.sample_hubs()
     devices = pnp.enumerate_usb_devices()
@@ -333,7 +359,7 @@ def build_snapshot(
     external, lan_devices, storage_devices, audio_devices = _external_devices(
         dock_hubs, devices, key_index
     )
-    usb_views, unmapped = _usb_views(external, port_map)
+    usb_views, unmapped = _usb_views(external, port_map, disks, disk_rates)
 
     network = sampler.sample()
     power = sample_power()
@@ -345,7 +371,7 @@ def build_snapshot(
         *usb_views,
         _hdmi_view(displays),
         _lan_view(network, lan_devices),
-        *_storage_views(removable, storage_devices),
+        *_storage_views(removable, storage_devices, disks, disk_rates),
         _audio_view(audio_devices, probe),
     ]
 
