@@ -29,6 +29,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.dump:
         from .dock import build_snapshot
 
+        try:
+            sys.stdout.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
         snapshot = build_snapshot()
         print(json.dumps(snapshot.to_dict(), ensure_ascii=False, indent=2))
         return 0
