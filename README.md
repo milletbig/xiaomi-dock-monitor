@@ -41,6 +41,28 @@ python -m dockmon
 run.bat --dump
 ```
 
+## 托盘与开机自启
+
+启动后托盘出现扩展坞图标，右键菜单提供「打开监控面板 / 隐藏窗口 / 开机自启 / 退出监控」。关闭窗口只会隐藏到托盘，不会退出程序。
+
+```bat
+:: 启动时直接驻留托盘，不弹出主窗口
+python -m dockmon --tray
+```
+
+- 「开机自启」写入 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`，命令按当前运行方式（源码 / exe）自动生成，始终带 `--tray`，登录后不会弹窗。
+- 同一时间只允许一个实例：重复启动会唤起已有窗口，然后自身退出。
+- 若 `pystray` / Pillow 不可用，则托盘功能自动降级为普通窗口（关闭即退出）。
+
+## 打包成单文件 exe
+
+```bat
+python -m pip install "pyinstaller>=6"
+python scripts/build_exe.py
+```
+
+产物为 `dist\dockmon.exe`：单文件、无控制台窗口，图标与版本信息在打包时自动生成，可直接分发；同样支持 `--tray` 与开机自启。
+
 ## 它是怎么拿数据的
 
 | 数据 | 来源 |

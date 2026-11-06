@@ -60,6 +60,8 @@ HEADER_HEIGHT = 64
 STATS_HEIGHT = 68
 BOTTOM_HEIGHT = 204
 
+WINDOW_TITLE = "小米十合一扩展坞 · 实时监控"
+
 
 def _set_dpi_awareness() -> None:
     if sys.platform != "win32":
@@ -91,10 +93,10 @@ def _round_rect(canvas: tk.Canvas, x1: int, y1: int, x2: int, y2: int, radius: i
 
 
 class DockMonitorApp:
-    def __init__(self) -> None:
+    def __init__(self, start_hidden: bool = False) -> None:
         _set_dpi_awareness()
         self.root = tk.Tk()
-        self.root.title("小米十合一扩展坞 · 实时监控")
+        self.root.title(WINDOW_TITLE)
         self.root.configure(bg=BG)
         screen_w = self.root.winfo_screenwidth()
         screen_h = self.root.winfo_screenheight()
@@ -125,10 +127,13 @@ class DockMonitorApp:
         self.history: list[float] = []
         self.paused = False
         self.closed = False
+        self.start_hidden = start_hidden
+        self.tray = None
         self.selected_id: str | None = None
         self.hover_id: str | None = None
         self._busy = threading.Lock()
         self._queue: queue.Queue[Snapshot] = queue.Queue()
+        self._commands: queue.Queue[str] = queue.Queue()
         self._last_update = 0.0
         self._slot_items: dict[str, dict[str, int]] = {}
         self._ports_by_id: dict[str, object] = {}
@@ -640,6 +645,7 @@ class DockMonitorApp:
                 self._apply(snapshot)
         except queue.Empty:
             pass
+        self._drain_commands()
         if not self.closed:
             self.root.after(150, self._poll_queue)
 
@@ -812,14 +818,69 @@ class DockMonitorApp:
         if not self.paused:
             self._request_refresh()
 
-    def _on_close(self) -> None:
+    # ------------------------------------------------------------- tray
+    def post_command(self, command: str) -> None:
+        """Queue a tray action; the Tk thread executes it in ``_drain_commands``."""
+        self._commands.put(command)
+
+    def _drain_commands(self) -> None:
+        while True:
+            try:
+                command = self._commands.get_nowait()
+            except queue.Empty:
+                return
+            if command == "show":
+                self.show_window()
+            elif command == "hide":
+                self.hide_window()
+            elif command == "quit":
+                self.quit_app()
+
+    def _start_tray(self) -> None:
+        try:
+            from .tray import TrayController
+        except Exception:
+            self.tray = None
+        else:
+            controller = TrayController(self)
+            self.tray = controller if controller.start() else None
+        if self.tray is None:
+            self.start_hidden = False
+            self.show_window()
+
+    def show_window(self) -> None:
+        self.root.deiconify()
+        self.root.lift()
+        try:
+            self.root.focus_force()
+        except tk.TclError:
+            pass
+
+    def hide_window(self) -> None:
+        self.root.withdraw()
+
+    def quit_app(self) -> None:
+        if self.closed:
+            return
         self.closed = True
+        if self.tray is not None:
+            self.tray.stop()
+            self.tray = None
         self.root.destroy()
 
+    def _on_close(self) -> None:
+        if self.tray is not None:
+            self.hide_window()
+        else:
+            self.quit_app()
+
     def run(self) -> None:
+        if self.start_hidden:
+            self.root.withdraw()
+        self.root.after(250, self._start_tray)
         self.root.mainloop()
 
 
-def run_ui() -> int:
-    DockMonitorApp().run()
+def run_ui(start_hidden: bool = False) -> int:
+    DockMonitorApp(start_hidden=start_hidden).run()
     return 0

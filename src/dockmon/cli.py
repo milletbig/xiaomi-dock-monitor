@@ -19,6 +19,9 @@ def main(argv: list[str] | None = None) -> int:
         description="Xiaomi 10-in-1 USB-C dock real-time monitor for Windows",
     )
     parser.add_argument("--dump", action="store_true", help="print a JSON snapshot and exit")
+    parser.add_argument(
+        "--tray", action="store_true", help="keep the window hidden and start in the system tray"
+    )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     args = parser.parse_args(argv)
 
@@ -37,9 +40,18 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(snapshot.to_dict(), ensure_ascii=False, indent=2))
         return 0
 
+    from .instance import acquire, focus_existing
+
+    if not acquire():
+        from .ui import WINDOW_TITLE
+
+        focus_existing(WINDOW_TITLE)
+        print("dockmon is already running; raised the existing window.", file=sys.stderr)
+        return 0
+
     from .ui import run_ui
 
-    return run_ui()
+    return run_ui(start_hidden=args.tray)
 
 
 if __name__ == "__main__":

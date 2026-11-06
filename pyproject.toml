@@ -23,10 +23,10 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Topic :: System :: Hardware",
 ]
-dependencies = ["psutil>=5.9"]
+dependencies = ["psutil>=5.9", "pystray>=0.19", "Pillow>=10"]
 
 [project.optional-dependencies]
-dev = ["pytest>=7", "ruff>=0.4"]
+dev = ["pytest>=7", "ruff>=0.4", "pyinstaller>=6"]
 
 [project.scripts]
 dockmon = "dockmon.cli:main"

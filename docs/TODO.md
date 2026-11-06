@@ -28,8 +28,8 @@
 | P1 | 每个 USB 口的实时吞吐（MB/s） | 🟡 可行但复杂 | 用 USB ETW（`Microsoft-Windows-USB-USBHUB3` / `USBPORT` / `UCX` / `USBXHCI`）按设备地址统计；需管理员、1s 聚合、有 CPU 开销 | ⏳ 待办 |
 | P2 | 物理口 ↔ Hub 端口映射配置 | ✅ 可执行 | 已按“供电 C=1、数据 C=2、USB-A=3–5”编号；`config/port_map.json` 记录实测锚点（C→顶层 SS#3 + 顶层 USB2#4、A1→顶层 SS#2 + 顶层 USB2#2、A2→SS 子Hub#4 + USB2 子Hub#4、A3→SS 子Hub#3 + USB2 子Hub#3）；5 个接口已全部标定 | ✅ 完成 |
 | P3 | SD/TF 读写速率 | ✅ 可执行 | `psutil.disk_io_counters(perdisk=True)` + `Get-Disk`/`Get-Partition` 将盘符映射到 PhysicalDrive | ⏳ 待办 |
-| P4 | 托盘模式 / 开机自启 / 单实例 | ✅ 可执行 | `pystray` 或 Win32 托盘 API；避免每次弹主窗口 | ⏳ 待办 |
-| P5 | 打包成单文件 exe | ✅ 可执行 | PyInstaller（`--noconsole`），附带版本信息 | ⏳ 待办 |
+| P4 | 托盘模式 / 开机自启 / 单实例 | ✅ 可执行 | `pystray` 托盘 + `--tray` 静默启动；`HKCU\...\Run` 开机自启；命名 Mutex 单实例（重复启动唤起已有窗口） | ✅ 完成 |
+| P5 | 打包成单文件 exe | ✅ 可执行 | `scripts/build_exe.py` 调用 PyInstaller `--onefile --windowed`，自动生成图标与版本信息，产物 `dist/dockmon.exe` | ✅ 完成 |
 | P6 | 历史曲线与导出 CSV | ✅ 可执行 | 采样环形缓冲 + 简单折线图 | ⏳ 待办 |
 | P7 | 多扩展坞/多品牌支持 | ✅ 可执行 | 目前按小米 VID `2717` 识别；可扩展为任意外部 Hub 组 | ⏳ 待办 |
 | P8 | 真实每口功率 / PD 电压电流 | ❌ 软件不可行 | 扩展坞无电量计、无厂商遥测接口；需外接 USB-C 功率计或硬件改造 | ❌ 不做 |
