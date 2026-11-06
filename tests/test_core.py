@@ -71,13 +71,13 @@ class PortAssignmentTests(unittest.TestCase):
         ss_hub = self._hub(
             r"USB\VID_2717&PID_50BA\6&24176d9b&0&5", "Generic SuperSpeed USB Hub", 0x50BA
         )
-        device = self._port(3, 0x1A2B, 0x3C4D, "2.1", "480 Mbps")
+        device = self._port(4, 0x1A2B, 0x3C4D, "2.1", "480 Mbps")
 
         views, unmapped = _usb_views([(ss_hub, device, None)])
 
         self.assertEqual(len(unmapped), 1)
         self.assertEqual(unmapped[0].hub_role, "SS")
-        self.assertEqual(unmapped[0].hub_port, 3)
+        self.assertEqual(unmapped[0].hub_port, 4)
         self.assertEqual(unmapped[0].vid_pid, "1A2B:3C4D")
         self.assertTrue(all(view.status == STATUS_IDLE for view in views))
 
@@ -163,6 +163,23 @@ class PortAssignmentTests(unittest.TestCase):
         self.assertEqual(views[1].status, STATUS_CONNECTED)
         self.assertEqual(views[1].detail.split(" · ")[0], "1609:3A04")
         self.assertIn("USB2 Hub #2", views[1].note)
+
+    def test_top_level_ss_port_3_maps_physical_port_two(self):
+        from dockmon.dock import _usb_views
+
+        ss_hub = self._hub(
+            r"USB\VID_2717&PID_50BA\6&24176d9b&0&5", "Generic SuperSpeed USB Hub", 0x50BA
+        )
+        hdd = self._port(3, 0x152D, 0x0583, "3.0", "5 Gbps")
+
+        views, unmapped = _usb_views([(ss_hub, hdd, None)])
+
+        self.assertEqual(unmapped, [])
+        self.assertEqual(views[0].id, "usb_c")
+        self.assertEqual(views[0].number, 2)
+        self.assertEqual(views[0].status, STATUS_CONNECTED)
+        self.assertEqual(views[0].speed, "5 Gbps")
+        self.assertIn("SS Hub #3", views[0].note)
 
     def test_unmapped_nested_port_is_reported(self):
         from dockmon.dock import _usb_views

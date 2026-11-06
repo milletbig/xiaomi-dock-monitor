@@ -264,7 +264,7 @@ class DockMonitorApp:
         )
         notes = [
             "物理编号：1 供电 Type-C、2 Type-C 数据、3–5 USB-A。",
-            "3/4/5 两侧已标定；仅 2 号 USB3 侧待补，未标定设备会在下方提示。",
+            "1–5 号接口已全部标定，4 个数据口 USB3/USB2 两侧齐全；异常端口会在下方提示。",
             "功率为规格上限；HDMI / 音频 / 存储为系统级推断。",
         ]
         for text in notes:

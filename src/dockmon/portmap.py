@@ -13,7 +13,7 @@ Physical numbering used by this project:
 number physical connector              current evidence
 =====  ==============================  ====================================
 1      供电 Type-C (PD, power only)      PD state, not in the USB tree
-2      Type-C 数据                     watch charger on top USB2 port 4
+2      Type-C 数据                     HDD on top SS port 3; watch charger on top USB2 port 4
 3      USB-A 1                         HDD on top SS port 2; 16GB drive on top USB2 port 2
 4      USB-A 2                         HDD on nested SS port 4; 16GB drive on nested USB2 port 4
 5      USB-A 3                         HDD on nested SS port 3; 16GB drive on nested USB2 port 3
@@ -98,8 +98,8 @@ DEFAULT_PORTS: tuple[PhysicalPort, ...] = (
         id="usb_c",
         label="Type-C 数据",
         connector="usb_c",
-        hub_ports=(HubPortRef(ROLE_USB2, 4),),
-        evidence="实测：手表充电器（05AC:0503）与中兴手机（19D2:0307）接此口均出现在顶层 USB2 Hub #4；USB3 侧待标定",
+        hub_ports=(HubPortRef(ROLE_SS, 3), HubPortRef(ROLE_USB2, 4)),
+        evidence="USB3 侧：移动硬盘（152D:0583）测得顶层 SS Hub #3；USB2 侧：手表充电器（05AC:0503）与中兴手机（19D2:0307）测得顶层 USB2 Hub #4",
     ),
     PhysicalPort(
         number=3,
