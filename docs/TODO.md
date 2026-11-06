@@ -33,7 +33,7 @@
 | P6 | 历史曲线与导出 CSV | ✅ 可执行 | 采样环形缓冲 + 简单折线图 | ⏳ 待办 |
 | P7 | 多扩展坞/多品牌支持 | ✅ 可执行 | 目前按小米 VID `2717` 识别；可扩展为任意外部 Hub 组 | ⏳ 待办 |
 | P8 | 真实每口功率 / PD 电压电流 | ❌ 软件不可行 | 扩展坞无电量计、无厂商遥测接口；需外接 USB-C 功率计或硬件改造 | ❌ 不做 |
-| P9 | HDMI 能力识别：显示器 EDID + 当前链路带宽 | 🟡 部分可行 | 读 `HKLM\SYSTEM\CurrentControlSet\Enum\DISPLAY\*\Device Parameters\EDID` 解析 HDMI VSDB（1.4）/ HF-VSDB（2.0）/ HDMI Forum VSDB（2.1，FRL），再用 `QueryDisplayConfig` 取当前分辨率/刷新率/位深算实际带宽，标注“该模式至少需要 HDMI x.x 线材”；**线缆自身的版本不可读**（无源 HDMI 线无 EEPROM，Windows 无认证查询接口） | ⏳ 待办 |
+| P9 | HDMI 能力识别：显示器 EDID + 当前链路带宽 | ✅ 可执行（部分） | 读取 `HKLM\SYSTEM\CurrentControlSet\Enum\DISPLAY\*` 的 EDID，解析 HDMI VSDB（1.4）/ HDMI Forum VSDB（2.1，FRL）；用 `EnumDisplaySettingsW` 取当前分辨率/刷新率/位深估算带宽，标注“推断最低线材 HDMI 1.4/2.0/2.1”与“显示器 EDID 上限”。**线缆自身版本不可读**（无源 HDMI 线无 EEPROM，Windows 无认证查询接口） | ✅ 完成 |
 
 ## 三、验收标准（v0.1）
 

@@ -268,5 +268,41 @@ class DiskRateSamplerTests(unittest.TestCase):
         self.assertEqual(views[0].rate, "↓ 1.0 MB/s ↑ 0 B/s")
 
 
+class EdidTests(unittest.TestCase):
+    @staticmethod
+    def _edid_with_block(payload: bytes, tag: int = 0x03) -> bytes:
+        base = bytearray(128)
+        base[126] = 1
+        extension = bytearray(128)
+        extension[0] = 0x02
+        extension[2] = 5 + len(payload)
+        extension[4] = (tag << 5) | len(payload)
+        extension[5 : 5 + len(payload)] = payload
+        return bytes(base) + bytes(extension)
+
+    def test_hdmi_14_vsdb_reports_max_tmds_clock(self):
+        from dockmon.metrics import parse_edid
+
+        info = parse_edid(self._edid_with_block(b"\x03\x0c\x00\xaa\xbb\x00\x3c"))
+        self.assertTrue(info.has_hdmi)
+        self.assertEqual(info.max_tmds_mhz, 300)
+
+    def test_hdmi_forum_vsdb_reports_frl_48g(self):
+        from dockmon.metrics import parse_edid
+
+        info = parse_edid(self._edid_with_block(b"\x79\xd8\x5d\xc4\x01\x78\x60", tag=0x07))
+        self.assertTrue(info.has_hdmi)
+        self.assertEqual(info.max_tmds_mhz, 600)
+        self.assertEqual(info.frl_gbps, 48.0)
+
+    def test_cable_classification(self):
+        from dockmon.metrics import cable_for
+
+        self.assertEqual(cable_for(3.2), "HDMI 1.4")
+        self.assertEqual(cable_for(12.6), "HDMI 2.0")
+        self.assertEqual(cable_for(25.2), "HDMI 2.1")
+        self.assertEqual(cable_for(0), "")
+
+
 if __name__ == "__main__":
     unittest.main()

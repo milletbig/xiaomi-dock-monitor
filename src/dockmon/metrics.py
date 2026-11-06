@@ -256,20 +256,90 @@ _DISPLAY_DEVICE_ATTACHED_TO_DESKTOP = 0x1
 _DISPLAY_DEVICE_PRIMARY_DEVICE = 0x4
 _DISPLAY_DEVICE_MIRRORING_DRIVER = 0x8
 
+_ENUM_CURRENT_SETTINGS = -1
+
+
+class _DEVMODEW(ctypes.Structure):
+    _fields_ = [
+        ("dmDeviceName", wt.WCHAR * 32),
+        ("dmSpecVersion", wt.WORD),
+        ("dmDriverVersion", wt.WORD),
+        ("dmSize", wt.WORD),
+        ("dmDriverExtra", wt.WORD),
+        ("dmFields", wt.DWORD),
+        ("dmOrientation", ctypes.c_short),
+        ("dmPaperSize", ctypes.c_short),
+        ("dmPaperLength", ctypes.c_short),
+        ("dmPaperWidth", ctypes.c_short),
+        ("dmScale", ctypes.c_short),
+        ("dmCopies", ctypes.c_short),
+        ("dmDefaultSource", ctypes.c_short),
+        ("dmPrintQuality", ctypes.c_short),
+        ("dmColor", ctypes.c_short),
+        ("dmDuplex", ctypes.c_short),
+        ("dmYResolution", ctypes.c_short),
+        ("dmTTOption", ctypes.c_short),
+        ("dmCollate", ctypes.c_short),
+        ("dmFormName", wt.WCHAR * 32),
+        ("dmLogPixels", wt.WORD),
+        ("dmBitsPerPel", wt.DWORD),
+        ("dmPelsWidth", wt.DWORD),
+        ("dmPelsHeight", wt.DWORD),
+        ("dmDisplayFlags", wt.DWORD),
+        ("dmDisplayFrequency", wt.DWORD),
+        ("dmICMMethod", wt.DWORD),
+        ("dmICMIntent", wt.DWORD),
+        ("dmMediaType", wt.DWORD),
+        ("dmDitherType", wt.DWORD),
+        ("dmReserved1", wt.DWORD),
+        ("dmReserved2", wt.DWORD),
+        ("dmPanningWidth", wt.DWORD),
+        ("dmPanningHeight", wt.DWORD),
+    ]
+
+
+@dataclass(slots=True)
+class DisplayMode:
+    """Current mode of one attached display adapter."""
+
+    device: str
+    name: str
+    device_id: str
+    width: int = 0
+    height: int = 0
+    refresh: int = 0
+    bpp: int = 0
+    primary: bool = False
+
 
 @dataclass(slots=True)
 class DisplayMetrics:
     monitors: list[str] = field(default_factory=list)
     primary_width: int = 0
     primary_height: int = 0
+    modes: list[DisplayMode] = field(default_factory=list)
 
     @property
     def count(self) -> int:
         return len(self.monitors)
 
 
+def _current_mode(device: str) -> _DEVMODEW | None:
+    if sys.platform != "win32":
+        return None
+    mode = _DEVMODEW()
+    mode.dmSize = ctypes.sizeof(mode)
+    try:
+        if ctypes.windll.user32.EnumDisplaySettingsW(device, _ENUM_CURRENT_SETTINGS, ctypes.byref(mode)):
+            return mode
+    except Exception:
+        pass
+    return None
+
+
 def probe_displays() -> DisplayMetrics:
     monitors: list[str] = []
+    modes: list[DisplayMode] = []
     if sys.platform != "win32":
         return DisplayMetrics()
     user32 = ctypes.windll.user32
@@ -283,6 +353,10 @@ def probe_displays() -> DisplayMetrics:
         flags = int(adapter.StateFlags)
         if not (flags & _DISPLAY_DEVICE_ATTACHED_TO_DESKTOP) or (flags & _DISPLAY_DEVICE_MIRRORING_DRIVER):
             continue
+        primary = bool(flags & _DISPLAY_DEVICE_PRIMARY_DEVICE)
+        adapter_name = adapter.DeviceName.strip()
+        devmode = _current_mode(adapter_name)
+        adapter_monitors = 0
         monitor_index = 0
         while True:
             monitor = _DISPLAY_DEVICEW()
@@ -293,12 +367,215 @@ def probe_displays() -> DisplayMetrics:
             if int(monitor.StateFlags) & _DISPLAY_DEVICE_ATTACHED_TO_DESKTOP:
                 label = monitor.DeviceString.strip() or monitor.DeviceID.strip() or "显示器"
                 monitors.append(label)
-        if not monitors and monitor_index == 0:
+                adapter_monitors += 1
+                modes.append(
+                    DisplayMode(
+                        device=adapter_name,
+                        name=label,
+                        device_id=monitor.DeviceID.strip(),
+                        width=int(devmode.dmPelsWidth) if devmode else 0,
+                        height=int(devmode.dmPelsHeight) if devmode else 0,
+                        refresh=int(devmode.dmDisplayFrequency) if devmode else 0,
+                        bpp=int(devmode.dmBitsPerPel) if devmode else 0,
+                        primary=primary,
+                    )
+                )
+        if adapter_monitors == 0:
             monitors.append(adapter.DeviceString.strip() or "显示器")
+            modes.append(
+                DisplayMode(
+                    device=adapter_name,
+                    name=adapter.DeviceString.strip() or "显示器",
+                    device_id="",
+                    width=int(devmode.dmPelsWidth) if devmode else 0,
+                    height=int(devmode.dmPelsHeight) if devmode else 0,
+                    refresh=int(devmode.dmDisplayFrequency) if devmode else 0,
+                    bpp=int(devmode.dmBitsPerPel) if devmode else 0,
+                    primary=primary,
+                )
+            )
 
     width = int(user32.GetSystemMetrics(0))
     height = int(user32.GetSystemMetrics(1))
-    return DisplayMetrics(monitors=monitors, primary_width=width, primary_height=height)
+    return DisplayMetrics(monitors=monitors, primary_width=width, primary_height=height, modes=modes)
+
+
+# ---------------------------------------------------------------------------
+# HDMI link capability (EDID + current mode)
+# ---------------------------------------------------------------------------
+
+_DISPLAY_ENUM_ROOT = r"SYSTEM\CurrentControlSet\Enum\DISPLAY"
+
+# Max_FRL_Rate nibble -> total FRL bandwidth in Gbps (0 means FRL unsupported).
+_FRL_RATES = {0: 0.0, 1: 9.0, 2: 18.0, 3: 24.0, 4: 32.0, 5: 40.0, 6: 48.0}
+
+_HDMI_1_4_MAX_GBPS = 10.2
+_HDMI_2_0_MAX_GBPS = 18.0
+
+
+@dataclass(slots=True)
+class EdidInfo:
+    max_tmds_mhz: float = 0.0
+    frl_gbps: float = 0.0
+    has_hdmi: bool = False
+
+    @property
+    def max_gbps(self) -> float:
+        tmds = self.max_tmds_mhz * 3 * 10 / 1000.0
+        return max(self.frl_gbps, tmds)
+
+
+@dataclass(slots=True)
+class HdmiMetrics:
+    connected: bool = False
+    monitor: str = ""
+    width: int = 0
+    height: int = 0
+    refresh: int = 0
+    bpp: int = 0
+    required_gbps: float = 0.0
+    min_cable: str = ""
+    sink_limit: str = ""
+    edid_ok: bool = False
+
+
+def read_display_edids() -> dict[str, bytes]:
+    """Map ``UMC``-style monitor ids (e.g. ``DEL4098``) to their raw EDID."""
+    try:
+        import winreg
+    except ImportError:  # pragma: no cover - non-Windows
+        return {}
+    result: dict[str, bytes] = {}
+    try:
+        root = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, _DISPLAY_ENUM_ROOT)
+    except OSError:
+        return result
+    with root:
+        index = 0
+        while True:
+            try:
+                model = winreg.EnumKey(root, index)
+            except OSError:
+                break
+            index += 1
+            try:
+                model_key = winreg.OpenKey(root, model)
+            except OSError:
+                continue
+            with model_key:
+                sub_index = 0
+                while True:
+                    try:
+                        instance = winreg.EnumKey(model_key, sub_index)
+                    except OSError:
+                        break
+                    sub_index += 1
+                    params = None
+                    try:
+                        params = winreg.OpenKey(model_key, instance + r"\Device Parameters")
+                        data, _kind = winreg.QueryValueEx(params, "EDID")
+                    except OSError:
+                        continue
+                    finally:
+                        if params is not None:
+                            params.Close()
+                    if isinstance(data, (bytes, bytearray)) and len(data) >= 128:
+                        result.setdefault(model.upper(), bytes(data))
+                    break
+    return result
+
+
+def parse_edid(data: bytes) -> EdidInfo:
+    """Read the HDMI VSDB / HDMI Forum VSDB capability from a raw EDID blob."""
+    info = EdidInfo()
+    if not data or len(data) < 128:
+        return info
+    offset = 128
+    while offset + 128 <= len(data):
+        block = data[offset : offset + 128]
+        if block[0] != 0x02:  # CEA-861 extension
+            break
+        end = block[2] if 4 < block[2] < 128 else 128
+        position = 4
+        while position < end:
+            header = block[position]
+            tag = header >> 5
+            length = header & 0x1F
+            payload = block[position + 1 : position + 1 + length]
+            if tag == 0x03 and len(payload) >= 5 and payload[0:3] == b"\x03\x0c\x00":
+                # HDMI 1.4 VSDB (OUI 00-0C-03, stored little-endian).
+                info.has_hdmi = True
+                if len(payload) >= 7:
+                    # Byte 6 is Max_TMDS_Clock in 5 MHz units.
+                    info.max_tmds_mhz = max(info.max_tmds_mhz, payload[6] * 5)
+            elif tag == 0x07 and len(payload) >= 4 and payload[0] == 0x79:
+                # HDMI Forum VSDB: OUI C4-5D-D8 (little-endian), then version, rate, flags.
+                if payload[1:4] == b"\xd8\x5d\xc4":
+                    info.has_hdmi = True
+                    if len(payload) >= 6:
+                        info.max_tmds_mhz = max(info.max_tmds_mhz, payload[5] * 5)
+                    if len(payload) >= 7:
+                        rate = (payload[6] >> 4) & 0x0F
+                        info.frl_gbps = max(info.frl_gbps, _FRL_RATES.get(rate, 0.0))
+            position += 1 + length
+        offset += 128
+    return info
+
+
+def required_bandwidth_gbps(width: int, height: int, refresh: int, bpp: int) -> float:
+    """Approximate the link bandwidth a mode needs, including blanking overhead."""
+    if not (width and height and refresh):
+        return 0.0
+    color_bits = bpp if 0 < bpp <= 24 else 24
+    return width * height * refresh * color_bits * 1.06 / 1e9
+
+
+def cable_for(gbps: float) -> str:
+    if gbps <= 0:
+        return ""
+    if gbps <= _HDMI_1_4_MAX_GBPS:
+        return "HDMI 1.4"
+    if gbps <= _HDMI_2_0_MAX_GBPS:
+        return "HDMI 2.0"
+    return "HDMI 2.1"
+
+
+def _sink_limit(info: EdidInfo) -> str:
+    if info.frl_gbps >= 48:
+        return "HDMI 2.1（FRL 48 Gbps）"
+    if info.frl_gbps > 0:
+        return f"HDMI 2.1（FRL {info.frl_gbps:.0f} Gbps）"
+    if info.max_tmds_mhz >= 600:
+        return "HDMI 2.0（18 Gbps）"
+    if info.max_tmds_mhz > 0:
+        return f"HDMI 1.4（{info.max_gbps:.1f} Gbps）"
+    if info.has_hdmi:
+        return "HDMI 设备（EDID 未标注带宽上限）"
+    return ""
+
+
+def probe_hdmi(displays: DisplayMetrics | None = None) -> HdmiMetrics:
+    """Describe the external display's current mode and EDID capability."""
+    metrics = displays if displays is not None else probe_displays()
+    external = [mode for mode in metrics.modes if not mode.primary]
+    if not external:
+        return HdmiMetrics()
+    mode = external[0]
+    required = required_bandwidth_gbps(mode.width, mode.height, mode.refresh, mode.bpp)
+    edid_key = mode.device_id.split("\\")[1].upper() if "\\" in mode.device_id else ""
+    info = parse_edid(read_display_edids().get(edid_key, b""))
+    return HdmiMetrics(
+        connected=True,
+        monitor=mode.name,
+        width=mode.width,
+        height=mode.height,
+        refresh=mode.refresh,
+        bpp=mode.bpp,
+        required_gbps=required,
+        min_cable=cable_for(required),
+        sink_limit=_sink_limit(info),
+        edid_ok=info.has_hdmi,
+    )
 
 
 # ---------------------------------------------------------------------------

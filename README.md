@@ -18,20 +18,23 @@
 - **USB 存储设备的实时读写吞吐**（按物理盘计数器差分，显示 ↓/↑）
 - **网口实时收发速率**（RTL8153 等 USB 网卡）
 - **可移动存储（SD/TF）状态与实时读写速率**
-- **显示输出 / 音频设备状态**
+- **HDMI 输出状态**：当前分辨率 / 刷新率 / 位深、估算所需带宽，以及“推断最低线材等级”（解析显示器 EDID；线缆本身的版本读不到）
+- **3.5mm 音频设备状态**
 - **供电状态与功率规格**：PD 100W 输入、90W 输出、单口 5V⎓1.5A、外设预算约 10W
 
 ## 快速开始
 
 ```bat
-cd E:\GitHub\xiaomi-dock-monitor
+:: 在仓库根目录执行，示例路径按你的克隆位置调整
+cd path\to\xiaomi-dock-monitor
 run.bat
 ```
 
 或者：
 
 ```bat
-cd E:\GitHub\xiaomi-dock-monitor
+:: 同上，先进入仓库根目录
+cd path\to\xiaomi-dock-monitor
 python -m pip install -e .
 python -m dockmon
 ```
@@ -81,7 +84,7 @@ python scripts/build_exe.py
 ## 重要限制
 
 1. **功率不可实测**。这个扩展坞没有电量计/遥测固件，Windows 也不向普通应用暴露 PD 合同。UI 中的“功率”全部是**规格上限**。
-2. **HDMI 不在 USB 树里**。它走 DP Alt Mode，只能通过显示子系统推断“有没有外接显示”。
+2. **HDMI 不在 USB 树里**。它走 DP Alt Mode，Dock 内部是 DP→HDMI 转换。界面读取显示器 EDID（HDMI VSDB / HDMI Forum VSDB）与当前时序，给出“该模式至少需要 HDMI 1.4/2.0/2.1 线材”的推断；**HDMI 线缆自身的版本无法读取**（无源线没有 EEPROM，Windows 也没有线缆认证查询接口）。
 3. **SD/TF 与音频是系统级推断**。可移动盘可能是 U 盘；音频只检测 USB 音频设备。
 4. **USB 设备到物理口的映射是实测配置**。10 合 1 的 3×USB-A + 1×USB-C 与内部 Hub 端口没有公开对应表；本仓库按“供电 Type-C=1、Type-C 数据=2、USB-A=3–5”编号，并在 `config/port_map.json` 中记录实测映射。当前 2、3、4、5 号口两侧均已标定，未标定端口仍会在界面提示。
 5. **USB 每口“实时吞吐”只覆盖存储设备**。U 盘 / 移动硬盘通过串号映射到 `PhysicalDriveN`，用磁盘计数器差分统计读写；HID、音频、网卡等非存储设备没有每口计数源，精确统计需要 USB ETW（需管理员权限），尚未实现。SD/TF 的读写速率同样来自磁盘计数器。

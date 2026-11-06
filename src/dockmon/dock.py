@@ -9,6 +9,7 @@ from . import pnp, portmap, usbhub
 from .metrics import (
     DiskRateSampler,
     DisplayMetrics,
+    HdmiMetrics,
     NetworkMetrics,
     NetworkSampler,
     PowerMetrics,
@@ -17,6 +18,7 @@ from .metrics import (
     format_bytes_rate,
     format_link_speed,
     probe_displays,
+    probe_hdmi,
     probe_removable_drives,
     probe_system,
     sample_power,
@@ -292,7 +294,28 @@ def _audio_view(audio_devices: list[pnp.UsbDevice], system_probe: SystemProbe) -
     return PortView("audio", "3.5mm 音频", "audio", STATUS_IDLE, "空闲", "未检测到 USB 音频")
 
 
-def _hdmi_view(displays: DisplayMetrics) -> PortView:
+def _hdmi_view(displays: DisplayMetrics, hdmi: HdmiMetrics | None = None) -> PortView:
+    if hdmi is not None and hdmi.connected:
+        mode = f"{hdmi.width}×{hdmi.height}"
+        if hdmi.refresh:
+            mode += f"@{hdmi.refresh}Hz"
+        color_bits = hdmi.bpp if 0 < hdmi.bpp <= 24 else 24
+        mode += f" · {color_bits}bit"
+        if hdmi.required_gbps:
+            mode += f" · {hdmi.required_gbps:.1f} Gbps"
+        parts = []
+        if hdmi.min_cable:
+            parts.append(f"推断最低线材 {hdmi.min_cable}")
+        if hdmi.sink_limit:
+            parts.append(f"显示器 EDID 上限 {hdmi.sink_limit}")
+        elif hdmi.edid_ok is False:
+            parts.append("EDID 未读到 HDMI VSDB")
+        note = " · ".join(parts) or "DP Alt Mode，非 USB 设备"
+        return PortView(
+            "hdmi", "HDMI 输出", "hdmi", STATUS_CONNECTED,
+            f"外接显示：{hdmi.monitor}" if hdmi.monitor else f"外接显示 {displays.count - 1} 台",
+            mode, "—", "—", note,
+        )
     if displays.count >= 2:
         return PortView(
             "hdmi", "HDMI 输出", "hdmi", STATUS_CONNECTED,
@@ -364,12 +387,13 @@ def build_snapshot(
     network = sampler.sample()
     power = sample_power()
     displays = probe_displays()
+    hdmi = probe_hdmi(displays)
     removable = probe_removable_drives()
 
     ports = [
         _pd_view(power, port_map),
         *usb_views,
-        _hdmi_view(displays),
+        _hdmi_view(displays, hdmi),
         _lan_view(network, lan_devices),
         *_storage_views(removable, storage_devices, disks, disk_rates),
         _audio_view(audio_devices, probe),
