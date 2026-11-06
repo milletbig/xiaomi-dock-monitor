@@ -270,8 +270,8 @@ class DockMonitorApp:
             fill=SUBTLE, font=self.fonts["small"],
         )
 
-        _round_rect(canvas, body_x1, body_y1, body_x2, body_y2, 18, fill=BODY, outline=BODY_EDGE, width=2)
-        canvas.create_line(body_x1 + 26, body_y1 + 20, body_x2 - 26, body_y1 + 20, fill="#1b2534")
+        canvas.create_rectangle(body_x1, body_y1, body_x2, body_y2,
+                                fill=BODY, outline=BODY_EDGE, width=2)
         canvas.create_text(
             (body_x1 + body_x2) // 2, body_y2 - 24,
             text="XIAOMI 10-in-1 USB-C HUB", fill=SUBTLE, font=self.fonts["small"],
@@ -280,8 +280,8 @@ class DockMonitorApp:
         # upstream cable on the left short edge
         cable_y = (body_y1 + body_y2) // 2
         canvas.create_line(16, cable_y, body_x1 - 12, cable_y, fill=SOCKET_EDGE, width=4)
-        _round_rect(canvas, body_x1 - 12, cable_y - 9, body_x1 + 10, cable_y + 9, 6,
-                    fill=SOCKET_FILL, outline=SOCKET_EDGE, width=1)
+        canvas.create_rectangle(body_x1 - 12, cable_y - 9, body_x1 + 10, cable_y + 9,
+                                fill=SOCKET_FILL, outline=SOCKET_EDGE, width=1)
         canvas.create_text(16, cable_y - 44, anchor="nw", text="上行 Type-C\n连接电脑",
                            fill=MUTED, font=self.fonts["small"], justify="left")
         canvas.create_text(16, cable_y + 20, anchor="nw", text="短边左侧",
@@ -294,7 +294,7 @@ class DockMonitorApp:
             block_x1 = int(body_x1 + col_width * index) + 5
             block_x2 = int(body_x1 + col_width * (index + 1)) - 5
             block_y1, block_y2 = 26, body_y1 - 14
-            self._draw_port_block(port_id, block_x1, block_y1, block_x2, block_y2, cx, body_y1, "top")
+            self._draw_port_block(port_id, block_x1, block_y1, block_x2, block_y2, cx, body_y1)
 
         # bottom long edge: HDMI, SD/TF combo, audio
         group_width = (body_x2 - body_x1) / 3
@@ -302,7 +302,7 @@ class DockMonitorApp:
         hdmi_cx = int(body_x1 + group_width * 0.5)
         hdmi_x1 = int(body_x1 + group_width * 0) + 5
         hdmi_x2 = int(body_x1 + group_width * 1) - 5
-        self._draw_port_block("hdmi", hdmi_x1, block_y1, hdmi_x2, block_y2, hdmi_cx, body_y2, "bottom")
+        self._draw_port_block("hdmi", hdmi_x1, block_y1, hdmi_x2, block_y2, hdmi_cx, body_y2)
 
         combo_cx = int(body_x1 + group_width * 1.5)
         combo_x1 = int(body_x1 + group_width * 1) + 5
@@ -312,24 +312,25 @@ class DockMonitorApp:
         audio_cx = int(body_x1 + group_width * 2.5)
         audio_x1 = int(body_x1 + group_width * 2) + 5
         audio_x2 = int(body_x1 + group_width * 3) - 5
-        self._draw_port_block("audio", audio_x1, block_y1, audio_x2, block_y2, audio_cx, body_y2, "bottom")
+        self._draw_port_block("audio", audio_x1, block_y1, audio_x2, block_y2, audio_cx, body_y2)
 
         # RJ45 on the right short edge
         lan_cx = body_x2
         lan_x1, lan_x2 = body_x2 + 26, width - 16
         lan_y1, lan_y2 = cable_y - 62, cable_y + 62
-        self._draw_port_block("lan", lan_x1, lan_y1, lan_x2, lan_y2, lan_cx, cable_y, "right")
+        self._draw_port_block("lan", lan_x1, lan_y1, lan_x2, lan_y2, lan_cx, cable_y)
 
         self._refresh_device()
 
     def _draw_port_block(
-        self, port_id: str, x1: int, y1: int, x2: int, y2: int, cx: int, edge_y: int, side: str
+        self, port_id: str, x1: int, y1: int, x2: int, y2: int, cx: int, edge_y: int
     ) -> None:
         canvas = self.device_canvas
         tag = f"port_{port_id}"
         canvas.create_rectangle(x1, y1, x2, y2, fill=BG, outline="", tags=(tag,))
 
-        frame = _round_rect(canvas, x1, y1, x2, y2, 8, fill="", outline=CARD_BORDER, width=1, tags=(tag,))
+        frame = canvas.create_rectangle(x1, y1, x2, y2, fill="", outline=CARD_BORDER,
+                                       width=1, tags=(tag,))
         dot = canvas.create_oval(x1 + 12, y1 + 13, x1 + 20, y1 + 21, fill=SUBTLE, outline="", tags=(tag,))
         title = canvas.create_text(x1 + 26, y1 + 8, anchor="nw", text="", fill=TEXT,
                                    font=self.fonts["slot_title"], tags=(tag,))
@@ -341,7 +342,7 @@ class DockMonitorApp:
         note = canvas.create_text(x1 + 10, y1 + 32 + gap * 2, anchor="nw", text="", fill=SUBTLE,
                                   font=self.fonts["small"], tags=(tag,))
 
-        socket = self._draw_socket(port_id, cx, edge_y, side, tag)
+        socket = self._draw_socket(port_id, cx, edge_y, tag)
         self._slot_items[port_id] = {
             "frame": frame, "dot": dot, "title": title, "device": device,
             "info": info, "note": note, "socket": socket, "tag": tag,
@@ -364,57 +365,109 @@ class DockMonitorApp:
             row_y2 = row_y1 + row_height
             tag = f"port_{port_id}"
             canvas.create_rectangle(x1 + 2, row_y1, x2 - 2, row_y2, fill=BG, outline="")
-            frame = _round_rect(canvas, x1 + 2, row_y1, x2 - 2, row_y2, 6, fill="",
-                                outline=CARD_BORDER, width=1, tags=(tag,))
+            frame = canvas.create_rectangle(x1 + 2, row_y1, x2 - 2, row_y2, fill="",
+                                            outline=CARD_BORDER, width=1, tags=(tag,))
             dot = canvas.create_oval(x1 + 12, row_y1 + 14, x1 + 20, row_y1 + 22,
                                      fill=SUBTLE, outline="", tags=(tag,))
             title = canvas.create_text(x1 + 26, row_y1 + 5, anchor="nw", text=label,
                                        fill=TEXT, font=self.fonts["slot_meta"], tags=(tag,))
             info = canvas.create_text(x1 + 26, row_y1 + 23, anchor="nw", text="",
                                       fill=SUBTLE, font=self.fonts["small"], tags=(tag,))
-            socket = self._draw_socket(port_id, cx, edge_y, "bottom", tag)
+            socket = self._draw_socket(port_id, cx, edge_y, tag)
             self._slot_items[port_id] = {
                 "frame": frame, "dot": dot, "title": title, "device": None,
                 "info": info, "note": None, "socket": socket, "tag": tag,
                 "title_max": (x2 - x1) - 32, "text_max": (x2 - x1) - 44,
             }
 
-    def _draw_socket(self, port_id: str, cx: int, cy: int, side: str, tag: str) -> list[int]:
+    def _draw_socket(self, port_id: str, cx: int, cy: int, tag: str) -> list[int]:
+        """Draw the standard connector icon for a port, centred on the dock edge."""
         canvas = self.device_canvas
         items: list[int] = []
+
+        def add(item: int) -> None:
+            items.append(item)
+
         if port_id in ("pd", "usb_c"):
-            items.append(_round_rect(canvas, cx - 15, cy - 8, cx + 15, cy + 8, 7,
-                                     fill=SOCKET_FILL, outline=SOCKET_EDGE, width=2, tags=(tag,)))
+            # USB-C receptacle: pill outline with the contact strip inside
+            add(_round_rect(canvas, cx - 17, cy - 8, cx + 17, cy + 8, 8, fill=SOCKET_FILL,
+                            outline=SOCKET_EDGE, width=2, tags=(tag,)))
+            add(canvas.create_line(cx - 9, cy, cx + 9, cy, fill=SOCKET_EDGE, tags=(tag,)))
+            if port_id == "pd":
+                items.extend(self._usb_pd_icon(cx, cy + 34, tag))
+            else:
+                items.extend(self._usb_trident(cx, cy + 34, tag))
         elif port_id.startswith("usb_a"):
-            items.append(canvas.create_rectangle(cx - 15, cy - 8, cx + 15, cy + 8,
-                                                 fill=SOCKET_FILL, outline=SOCKET_EDGE, width=2, tags=(tag,)))
-            items.append(canvas.create_rectangle(cx - 10, cy - 3, cx + 10, cy + 3,
-                                                 fill=SOCKET_EDGE, outline="", tags=(tag,)))
+            # USB-A receptacle: rectangle with the contact block in the lower half
+            add(canvas.create_rectangle(cx - 17, cy - 8, cx + 17, cy + 8,
+                                        fill=SOCKET_FILL, outline=SOCKET_EDGE, width=2, tags=(tag,)))
+            add(canvas.create_rectangle(cx - 11, cy - 5, cx + 11, cy + 1,
+                                        fill=SOCKET_EDGE, outline="", tags=(tag,)))
+            items.extend(self._usb_trident(cx, cy + 34, tag))
         elif port_id == "hdmi":
-            items.append(canvas.create_polygon(cx - 16, cy - 7, cx + 16, cy - 7,
-                                               cx + 13, cy + 8, cx - 13, cy + 8,
-                                               fill=SOCKET_FILL, outline=SOCKET_EDGE, width=2, tags=(tag,)))
+            # HDMI connector silhouette with the inner contact bar
+            add(canvas.create_polygon(cx - 18, cy - 7, cx + 18, cy - 7,
+                                      cx + 14, cy + 8, cx - 14, cy + 8,
+                                      fill=SOCKET_FILL, outline=SOCKET_EDGE, width=2, tags=(tag,)))
+            add(canvas.create_line(cx - 12, cy - 3, cx + 12, cy - 3,
+                                   fill=SOCKET_EDGE, tags=(tag,)))
         elif port_id == "lan":
-            items.append(canvas.create_rectangle(cx - 8, cy - 18, cx + 16, cy + 18,
-                                                 fill=SOCKET_FILL, outline=SOCKET_EDGE, width=2, tags=(tag,)))
-            for step in range(4):
-                py = cy - 13 + step * 9
-                items.append(canvas.create_line(cx - 4, py, cx + 10, py, fill=SOCKET_EDGE, tags=(tag,)))
-        elif port_id in ("tf", "sd"):
-            top = cy - 16 if port_id == "tf" else cy
-            bottom = cy if port_id == "tf" else cy + 16
-            items.append(canvas.create_polygon(cx - 14, top, cx + 10, top, cx + 14, top + 5,
-                                               cx + 14, bottom, cx - 14, bottom,
-                                               fill=SOCKET_FILL, outline=SOCKET_EDGE, width=2, tags=(tag,)))
+            # RJ45 jack: body, 8 contacts and the latch
+            add(canvas.create_rectangle(cx - 9, cy - 20, cx + 21, cy + 20,
+                                        fill=SOCKET_FILL, outline=SOCKET_EDGE, width=2, tags=(tag,)))
+            for step in range(8):
+                py = cy - 17 + step * 4.6
+                add(canvas.create_line(cx - 4, py, cx + 9, py, fill=SOCKET_EDGE, tags=(tag,)))
+            add(canvas.create_rectangle(cx + 10, cy - 7, cx + 19, cy + 7,
+                                        fill=SOCKET_EDGE, outline="", tags=(tag,)))
+        elif port_id == "tf":
+            # microSD card: small card with a clipped corner, above the SD slot
+            add(canvas.create_polygon(cx - 15, cy - 18, cx + 8, cy - 18, cx + 13, cy - 13,
+                                      cx + 13, cy, cx - 15, cy,
+                                      fill=SOCKET_FILL, outline=SOCKET_EDGE, width=2, tags=(tag,)))
+        elif port_id == "sd":
+            # SD card: wider card with a clipped corner, below the TF slot
+            add(canvas.create_polygon(cx - 19, cy, cx + 10, cy, cx + 19, cy + 8,
+                                      cx + 19, cy + 18, cx - 19, cy + 18,
+                                      fill=SOCKET_FILL, outline=SOCKET_EDGE, width=2, tags=(tag,)))
         elif port_id == "audio":
-            items.append(canvas.create_oval(cx - 9, cy - 9, cx + 9, cy + 9,
-                                            fill=SOCKET_FILL, outline=SOCKET_EDGE, width=2, tags=(tag,)))
-            items.append(canvas.create_oval(cx - 3, cy - 3, cx + 3, cy + 3,
-                                            fill=SOCKET_EDGE, outline="", tags=(tag,)))
+            # 3.5 mm jack: socket ring plus the plug barrel
+            add(canvas.create_oval(cx - 11, cy - 9, cx + 7, cy + 9,
+                                   fill=SOCKET_FILL, outline=SOCKET_EDGE, width=2, tags=(tag,)))
+            add(canvas.create_oval(cx - 5, cy - 3, cx + 1, cy + 3,
+                                   fill=SOCKET_EDGE, outline="", tags=(tag,)))
+            add(canvas.create_rectangle(cx + 7, cy - 3, cx + 17, cy + 3,
+                                        fill=SOCKET_FILL, outline=SOCKET_EDGE, width=2, tags=(tag,)))
+            add(canvas.create_line(cx + 11, cy - 3, cx + 11, cy + 3,
+                                   fill=SOCKET_EDGE, tags=(tag,)))
         else:
-            items.append(canvas.create_rectangle(cx - 12, cy - 8, cx + 12, cy + 8,
-                                                 fill=SOCKET_FILL, outline=SOCKET_EDGE, width=2, tags=(tag,)))
+            add(canvas.create_rectangle(cx - 12, cy - 8, cx + 12, cy + 8,
+                                        fill=SOCKET_FILL, outline=SOCKET_EDGE, width=2, tags=(tag,)))
         return items
+
+    def _usb_trident(self, x: int, y: int, tag: str) -> list[int]:
+        """USB-IF trident mark used by the USB 2.0/3.x connector icons."""
+        canvas = self.device_canvas
+        return [
+            canvas.create_line(x, y + 9, x, y - 9, fill=SOCKET_EDGE, width=2, tags=(tag,)),
+            canvas.create_polygon(x - 6, y - 9, x + 6, y - 9, x, y - 16,
+                                  outline=SOCKET_EDGE, width=2, tags=(tag,)),
+            canvas.create_line(x, y + 2, x - 10, y - 4, fill=SOCKET_EDGE, width=2, tags=(tag,)),
+            canvas.create_oval(x - 15, y - 9, x - 6, y, outline=SOCKET_EDGE, width=2, tags=(tag,)),
+            canvas.create_line(x, y + 2, x + 10, y - 4, fill=SOCKET_EDGE, width=2, tags=(tag,)),
+            canvas.create_rectangle(x + 6, y - 9, x + 15, y, outline=SOCKET_EDGE, width=2, tags=(tag,)),
+            canvas.create_oval(x - 4, y + 9, x + 4, y + 17, outline=SOCKET_EDGE, width=2, tags=(tag,)),
+        ]
+
+    def _usb_pd_icon(self, x: int, y: int, tag: str) -> list[int]:
+        """USB Power Delivery mark: a lightning bolt inside the standard shell."""
+        canvas = self.device_canvas
+        return [
+            canvas.create_oval(x - 14, y - 14, x + 14, y + 14, outline=SOCKET_EDGE, tags=(tag,)),
+            canvas.create_polygon(x - 3, y - 10, x + 5, y - 10, x, y - 1, x + 6, y - 1,
+                                  x - 5, y + 10, x, y + 1, x - 6, y + 1,
+                                  fill=SOCKET_EDGE, outline=SOCKET_EDGE, tags=(tag,)),
+        ]
 
     def _refresh_device(self) -> None:
         for port_id, items in self._slot_items.items():
